@@ -7,6 +7,7 @@ allowed-tools:
   - Bash(whisper-cli:*)
   - Bash(pbcopy:*)
   - Bash(jq:*)
+  - Bash(emacsclient:*)
   - Read
   - Skill(taking-notes)
   - mcp__browser-control__*
@@ -49,12 +50,30 @@ Else:
 
 ## Step 2: Detect Source Type
 
-If source is empty, get current browser tab URL first:
-```
-Use mcp__browser-control__get-current-tab
-```
+If source is empty, detect from context:
 
-Then match source against:
+### Context Cascade
+
+1. **Check Emacs buffer** (via emacsclient):
+   ```bash
+   emacsclient --eval '(with-current-buffer (window-buffer) major-mode)'
+   ```
+   - `nov-mode` → extractors/ebook.md
+   - `eww-mode` → extract URL, treat as webpage
+   - `pdf-view-mode` → extract file path, treat as PDF
+
+2. **Check working directory**:
+   - If in Calibre Library → prompt: "Extract from current e-book chapter?"
+
+3. **Fall back to browser tab**:
+   ```
+   Use mcp__browser-control__get-current-tab
+   ```
+
+4. **If ambiguous** (e.g., nov-mode buffer exists but not focused, or multiple sources available):
+   - Prompt user to choose source
+
+### Match source against:
 
 | Pattern | Extractor |
 |---------|-----------|
@@ -64,7 +83,8 @@ Then match source against:
 | `libsyn.com`, `anchor.fm`, `podbean.com`, `buzzsprout.com` (audio hosts) | extractors/podcast.md |
 | `http://`, `https://` (with embedded `.mp3`/`.m4a` or audio player) | extractors/podcast.md |
 | `http://`, `https://` | extractors/webpage.md |
-| `.pdf` | extractors/pdf.md |
+| `.epub`, nov-mode | extractors/ebook.md |
+| `.pdf`, pdf-view-mode | extractors/pdf.md |
 | `.ppt`, `.pptx`, `.doc`, `.docx` | extractors/office.md |
 | `.mp3`, `.m4a`, `.wav`, `.flac` | extractors/audio.md |
 | `.mp4`, `.mkv`, `.mov`, `.webm` | extractors/video.md |
