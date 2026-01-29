@@ -98,7 +98,7 @@ If source is empty, detect from context:
 | `youtube.com`, `youtu.be` | extractors/youtube.md |
 | `bilibili.com`, `b23.tv` | extractors/bilibili.md |
 | `overcast.fm`, `ximalaya.com`, `xiaoyuzhoufm.com`, `podcasts.apple.com`, `castro.fm`, `pocketcasts.com` | extractors/podcast.md |
-| `libsyn.com`, `anchor.fm`, `podbean.com`, `buzzsprout.com` (audio hosts) | extractors/podcast.md |
+| `libsyn.com`, `anchor.fm`, `podbean.com`, `buzzsprout.com`, `transistor.fm` (audio hosts) | extractors/podcast.md |
 | `http://`, `https://` (with embedded `.mp3`/`.m4a` or audio player) | extractors/podcast.md |
 | `http://`, `https://` | extractors/webpage.md |
 | `.epub`, nov-mode | extractors/ebook.md |
