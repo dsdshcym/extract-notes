@@ -14,17 +14,13 @@ If result is `nil`, inform user that no e-book is currently open in Emacs.
 
 ## 2. Get Chapter Content
 
-```bash
-emacsclient --eval '(let ((buf (seq-find (lambda (b) (with-current-buffer b (eq major-mode (quote nov-mode)))) (buffer-list)))) (when buf (with-current-buffer buf (buffer-substring-no-properties (point-min) (point-max)))))'
-```
+Using the buffer name:
 
-This returns the exact text the user sees in their current chapter.
+```bash
+emacsclient --eval '(with-current-buffer "BUFFER-NAME" (buffer-substring-no-properties (point-min) (point-max)))'
+```
 
 ## 3. Output
 
 Pass to note formatting step:
-- **title**: Book title from metadata
-- **author**: Creator from metadata
-- **source**: Original epub file path
-- **chapter**: "Chapter X of Y" (from index and total)
 - **content**: The current chapter text (what the user sees)
