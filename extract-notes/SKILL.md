@@ -20,24 +20,32 @@ Extract content from any source and format as notes.
 ## Input
 
 ```
-$ARGUMENTS = [source] [notes-taking-skill]
+$ARGUMENTS = [source-or-heading] [notes-taking-skill]
 ```
 
-- **source** (optional): URL or file path
-  - If omitted, detect from clocked-in header or current context
+- **source-or-heading** (optional): URL, file path, or Org heading
+  - URL: `https://youtube.com/watch?v=xxx`
+  - File path: `~/Documents/paper.pdf`
+  - Org heading with link: `Some Title [[https://example.com][link]]`
+  - If omitted, detect from current browser tab
 - **notes-taking-skill** (optional): Skill for note formatting
   - If omitted, uses `taking-notes`
 
 **Examples:**
-- `/extract-notes` → clocked-in header or current tab, default format
+- `/extract-notes` → current browser tab, default format
 - `/extract-notes https://youtube.com/watch?v=xxx` → YouTube video
 - `/extract-notes ~/Documents/paper.pdf` → PDF file
+- `/extract-notes My Podcast Episode [[https://overcast.fm/+xxx][link]]` → Org heading with embedded URL
 - `/extract-notes https://example.com taking-notes-in-markdown` → webpage with custom format
 
 ## Step 1: Parse Arguments
 
 ```
-If first arg starts with http://, https://, or ~ or /:
+If $ARGUMENTS contains [[url][...]] org link pattern:
+  - Extract URL from the link
+  - Remaining text = title context
+  - source = extracted URL
+Else if first arg starts with http://, https://, or ~ or /:
   - First arg = source
   - Second arg (if any) = notes-taking-skill
 Else if $ARGUMENTS is non-empty:
@@ -48,48 +56,43 @@ Else:
   - Detect source from context (Step 2)
 ```
 
-## Step 2: Detect Source Type
+### Extracting URL from Org heading
 
-If source is empty, detect from context:
+Org link format: `[[URL][description]]` or `[[URL]]`
 
-### Context Cascade
+Regex to extract: `\[\[([^\]]+)\](?:\[[^\]]*\])?\]`
 
-1. **Check clocked-in Org header** (highest priority):
-   ```bash
-   emacsclient --eval '(when (org-clocking-p)
-     (with-current-buffer (marker-buffer org-clock-marker)
-       (goto-char org-clock-marker)
-       (list :heading (org-get-heading t t t t)
-             :tags (org-get-tags)
-             :properties (org-entry-properties))))'
+Example: `My Podcast [[https://overcast.fm/+abc][Episode 123]]`
+→ URL: `https://overcast.fm/+abc`
+
+## Step 2: Ensure Source is Accessible
+
+### If source URL was extracted from heading:
+
+1. Check if URL is already open (call concurrently for speed):
+   ```
+   PARALLEL:
+     - mcp__browser-control__get-current-tab
+     - mcp__browser-control__get-list-of-open-tabs
    ```
 
-   **Route by file path:**
-   | File | Extractor |
-   |------|-----------|
-   | `lists/podcasts.org` | extractors/podcast.md |
-   | `lists/online_videos.org` | extractors/youtube.md (check URL for bilibili) |
-   | `lists/mooc.org` | extractors/youtube.md or webpage (check URL) |
-   | `lists/movies.org`, `lists/tv.org`, `lists/anime.org` | N/A (visual media, no transcript extraction) |
-   | `lists/music.org` | N/A (music, no transcript extraction) |
-   | `notes/*.org` | Ask user for source type |
+2. If current tab matches URL → proceed directly
 
-   **Extract URL from properties:**
-   - Check `URL` property first
-   - Check `ROAM_REFS` property (may contain URL)
-   - Check headline for embedded `[[url][title]]` links
+3. If found in other tabs → proceed (extractor will fetch content directly)
 
-   **If clocked in but no URL found or file unrecognized:**
-   - Prompt user: "Clocked into: {heading}. What type of content is this?"
-   - Options: Website, YouTube, Podcast, PDF, Other (provide URL)
-
-2. **Fall back to browser tab**:
+4. If not found in any tab, open it:
    ```
-   Use mcp__browser-control__get-current-tab
+   Use mcp__browser-control__open-browser-tab with the URL
    ```
 
-3. **If ambiguous**
-   - Prompt user to choose source
+### If source is empty:
+
+Detect from current browser tab:
+```
+Use mcp__browser-control__get-current-tab
+```
+
+If browser tab unavailable, prompt user for source.
 
 ### Match source against:
 
