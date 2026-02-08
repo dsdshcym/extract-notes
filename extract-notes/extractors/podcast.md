@@ -67,14 +67,6 @@ whisper-cli -m ~/.whisper/ggml-large-v3.bin -l auto -f /tmp/podcast-{ID}.wav -ot
 
 Then read `/tmp/podcast-{ID}-transcript.txt`.
 
-**Post-process Chinese punctuation**: whisper-cpp outputs half-width punctuation in Chinese text. Fix before passing to note formatter:
-- `,` → `，` (comma)
-- `.` → `。` (period) — only when surrounded by CJK characters
-- `?` → `？`
-- `!` → `！`
-- `:` → `：` — only when surrounded by CJK characters
-- `;` → `；`
-
 ## 4. Structure Content
 
 Priority for structure:
