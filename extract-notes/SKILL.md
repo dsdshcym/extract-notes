@@ -116,6 +116,17 @@ Follow the matched extractor file. Each extractor produces:
 - **metadata**: title, author/channel, date, source URL
 - **content**: transcript or article text
 
+## Step 3.5: Clean Extracted Content
+
+Before formatting, clean up extraction artifacts:
+
+- **SRT/subtitle transcripts**: De-duplicate repeated lines (auto-captions repeat each line across overlapping time windows), remove timing codes, merge into flowing text while preserving paragraph/topic breaks
+- **OCR text**: Fix obvious OCR errors (l/1, O/0 confusion, broken words)
+- **HTML artifacts**: Strip remaining tags, navigation chrome, boilerplate footers
+- **General**: Remove ad reads / sponsor segments if clearly marked, normalize whitespace
+
+The goal: clean raw text that reads naturally, ready for note-taking. Do NOT summarize or reorganize — only remove extraction noise.
+
 ## Step 4: Format Notes
 
 ### If notes-taking-skill is provided:
