@@ -124,12 +124,12 @@ Before formatting, clean up extraction artifacts:
 - **OCR text**: Fix obvious OCR errors (l/1, O/0 confusion, broken words)
 - **HTML artifacts**: Strip remaining tags, navigation chrome, boilerplate footers
 - **Whisper Chinese punctuation**: whisper-cpp outputs half-width punctuation in Chinese text — convert to full-width:
-  + `,` → `，` (comma)
-  + `.` → `。` (period) — only when surrounded by CJK characters
-  + `?` → `？`
-  + `!` → `！`
-  + `:` → `：` — only when surrounded by CJK characters
-  + `;` → `；`
+  + "," → "，" (comma)
+  + "." → "。" (period) — only when surrounded by CJK characters
+  + "?" → "？"
+  + "!" → "！"
+  + ":" → "：" — only when surrounded by CJK characters
+  + ";" → "；"
 - **General**: Remove ad reads / sponsor segments if clearly marked, normalize whitespace
 
 The goal: clean raw text that reads naturally, ready for note-taking. Do NOT summarize or reorganize — only remove extraction noise.
