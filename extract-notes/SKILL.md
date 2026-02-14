@@ -5,7 +5,6 @@ allowed-tools:
   - Bash(yt-dlp:*)
   - Bash(ffmpeg:*)
   - Bash(whisper-cli:*)
-  - Bash(pbcopy:*)
   - Bash(jq:*)
   - Bash(emacsclient:*)
   - Bash(osascript:*)
@@ -146,9 +145,4 @@ Invoke the format skill with extracted content.
 ### If no notes-taking-skill (default):
 Use `taking-notes` skill.
 
-**Output:** Copy to clipboard
-```bash
-pbcopy <<'EOF'
-- Notes here
-EOF
-```
+**Output:** Print the formatted notes as raw text (user will `/copy` to clipboard).
