@@ -8,8 +8,11 @@ allowed-tools:
   - Bash(pbcopy:*)
   - Bash(jq:*)
   - Bash(emacsclient:*)
+  - Bash(osascript:*)
+  - Bash(python3:*)
   - Read
   - Skill(taking-notes)
+  - Search
   - mcp__browser-control__*
 ---
 
@@ -109,6 +112,7 @@ If browser tab unavailable, prompt user for source.
 | `.ppt`, `.pptx`, `.doc`, `.docx` | extractors/office.md |
 | `.mp3`, `.m4a`, `.wav`, `.flac` | extractors/audio.md |
 | `.mp4`, `.mkv`, `.mov`, `.webm` | extractors/video.md |
+| Zoom transcript (macOS native window) | extractors/zoom-transcript.md |
 
 ## Step 3: Extract Content
 
