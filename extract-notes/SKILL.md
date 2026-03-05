@@ -6,6 +6,7 @@ allowed-tools:
   - Bash(ffmpeg:*)
   - Bash(whisper-cli:*)
   - Bash(jq:*)
+  - Bash(wc:*)
   - Bash(emacsclient:*)
   - Bash(osascript:*)
   - Bash(python3:*)
