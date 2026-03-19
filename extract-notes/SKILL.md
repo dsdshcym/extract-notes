@@ -10,7 +10,6 @@ allowed-tools:
   - Bash(emacsclient:*)
   - Bash(osascript:*)
   - Bash(python3:*)
-  - Bash(bash *zoom-check.sh*)
   - Bash(bash *zoom-extract.sh*)
   - Read
   - Skill(taking-notes)

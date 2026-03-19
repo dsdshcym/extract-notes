@@ -6,6 +6,8 @@
 # Usage: zoom-extract.sh [MEETING_ID]
 #   MEETING_ID: numeric meeting ID (default: from invite link or "unknown")
 #
+# Requires: standalone "Transcript" window popped out in Zoom.
+#
 # Output: clean transcript printed to stdout.
 # Also saved to /tmp/zoom_transcript_{MEETING_ID}_{DATE}.txt
 # Raw merged data at /tmp/zoom_merged_{MEETING_ID}_{DATE}.txt
@@ -15,10 +17,33 @@ set -euo pipefail
 MEETING_ID="${1:-}"
 DATE=$(date +%Y%m%d_%H%M%S)
 
-# Auto-detect meeting ID if not provided
+# Verify standalone Transcript window exists
+windows=$(osascript -e '
+tell application "System Events"
+    tell process "zoom.us"
+        get name of every window
+    end tell
+end tell
+')
+if ! echo "$windows" | grep -q "Transcript"; then
+    echo "No standalone Transcript window found. Please pop out the transcript panel in Zoom." >&2
+    exit 1
+fi
+
+# Get meeting ID from invite link if not provided
 if [ -z "$MEETING_ID" ]; then
-    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-    MEETING_ID=$("$SCRIPT_DIR/zoom-check.sh")
+    MEETING_ID=$(osascript -e '
+    set oldClip to the clipboard
+    tell application "System Events"
+        tell process "zoom.us"
+            click menu item "Copy invite link" of menu 1 of menu bar item "Meeting" of menu bar 1
+        end tell
+    end tell
+    delay 0.3
+    set inviteLink to the clipboard as text
+    set the clipboard to oldClip
+    return inviteLink
+    ' 2>/dev/null | grep -oE '[0-9]{9,}' || echo "unknown")
 fi
 
 MERGED_FILE="/tmp/zoom_merged_${MEETING_ID}_${DATE}.txt"

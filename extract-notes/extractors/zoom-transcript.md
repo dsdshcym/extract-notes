@@ -4,24 +4,20 @@ Extract transcript text from Zoom's standalone Transcript window via AppleScript
 
 ## Prerequisites
 
-- Zoom (`zoom.us`) running with a standalone "Transcript" window open (pop out the transcript panel)
+- Zoom (`zoom.us`) running with a standalone "Transcript" window popped out
 - macOS Accessibility permissions granted to the calling process
 
-## 1. Verify Transcript Window & Get Meeting ID
-
-```bash
-bash ${CLAUDE_SKILL_DIR}/scripts/zoom-check.sh
-```
-
-Outputs the numeric meeting ID (e.g., `95820521679`). Exit code 1 if no standalone Transcript window found — ask user to pop out the transcript panel in Zoom.
-
-## 2. Extract Transcript
+## Extract Transcript
 
 ```bash
 bash ${CLAUDE_SKILL_DIR}/scripts/zoom-extract.sh [MEETING_ID]
 ```
 
-Pass the meeting ID from step 1 to skip re-detection. Without args, auto-detects by calling `zoom-check.sh` internally.
+The script:
+1. Verifies the standalone Transcript window exists (exits 1 with message if not)
+2. Gets meeting ID from invite link if not provided as argument
+3. Bulk-fetches all speaker names and text areas via AppleScript
+4. Parses into clean speaker-timestamped blocks via Python
 
 Output is printed to stdout and saved to `/tmp/zoom_transcript_{MEETING_ID}_{DATETIME}.txt`.
 Raw merged data saved to `/tmp/zoom_merged_{MEETING_ID}_{DATETIME}.txt`.
@@ -42,7 +38,7 @@ For rows with 2 text areas, AppleScript's `(item as text)` concatenates them (e.
 
 When a new speaker row appears, the previous speaker's text must be flushed **before** `current_speaker` is updated. Otherwise the previous text block gets misattributed to the new speaker.
 
-## 3. Output
+## Output
 
 Clean transcript format:
 
@@ -62,7 +58,7 @@ Metadata:
 
 ## Notes
 
-- Always use the standalone Transcript window (not the embedded transcript in the Zoom Meeting window)
+- Always use the standalone Transcript window (pop it out from the Zoom Meeting window)
 - Bulk `value of every ... of every row` is critical — row-by-row AppleScript loops time out on 500+ row transcripts
 - Cmd+A / Cmd+C does not work in Zoom's native Transcript window
 - Window must be named "Transcript" (may differ in non-English Zoom)
