@@ -1,31 +1,30 @@
 # Zoom Transcript Extraction (macOS Native Window)
 
-Extract transcript text from Zoom's native macOS Transcript window via AppleScript accessibility APIs.
+Extract transcript text from Zoom's standalone Transcript window via AppleScript accessibility APIs.
 
 ## Prerequisites
 
-- Zoom (`zoom.us`) running with a "Transcript" window open
+- Zoom (`zoom.us`) running with a standalone "Transcript" window open (pop out the transcript panel)
 - macOS Accessibility permissions granted to the calling process
 
-## 1. Verify Transcript Window
+## 1. Verify Transcript Window & Get Meeting ID
 
 ```bash
 bash ${CLAUDE_SKILL_DIR}/scripts/zoom-check.sh
 ```
 
-Look for `window "Transcript"` in the output. If absent (exit code 1), ask user to open the Zoom transcript panel.
+Outputs the numeric meeting ID (e.g., `95820521679`). Exit code 1 if no standalone Transcript window found — ask user to pop out the transcript panel in Zoom.
 
 ## 2. Extract Transcript
 
 ```bash
-bash ${CLAUDE_SKILL_DIR}/scripts/zoom-extract.sh
+bash ${CLAUDE_SKILL_DIR}/scripts/zoom-extract.sh [MEETING_ID]
 ```
 
-This single command:
-1. Bulk-fetches all speaker names and text areas from the Transcript window via AppleScript
-2. Parses the raw `S:`/`T:` prefixed lines into clean speaker-timestamped blocks via Python
+Pass the meeting ID from step 1 to skip re-detection. Without args, auto-detects by calling `zoom-check.sh` internally.
 
-Output is printed to stdout and saved to `/tmp/zoom_transcript_clean.txt`.
+Output is printed to stdout and saved to `/tmp/zoom_transcript_{MEETING_ID}_{DATETIME}.txt`.
+Raw merged data saved to `/tmp/zoom_merged_{MEETING_ID}_{DATETIME}.txt`.
 
 ### Table structure
 
@@ -63,7 +62,8 @@ Metadata:
 
 ## Notes
 
+- Always use the standalone Transcript window (not the embedded transcript in the Zoom Meeting window)
 - Bulk `value of every ... of every row` is critical — row-by-row AppleScript loops time out on 500+ row transcripts
 - Cmd+A / Cmd+C does not work in Zoom's native Transcript window
 - Window must be named "Transcript" (may differ in non-English Zoom)
-- Temp files in `/tmp/` can be cleaned up after use
+- Meeting ID is obtained by clicking "Copy invite link" from the Meeting menu (restores clipboard after)

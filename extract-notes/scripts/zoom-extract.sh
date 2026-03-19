@@ -1,18 +1,28 @@
 #!/usr/bin/env bash
-# Extract Zoom transcript from the native macOS Transcript window.
+# Extract Zoom transcript from the standalone Transcript window.
 # Uses AppleScript to bulk-fetch all rows, then Python to parse into
 # clean speaker-timestamped blocks.
 #
+# Usage: zoom-extract.sh [MEETING_ID]
+#   MEETING_ID: numeric meeting ID (default: from invite link or "unknown")
+#
 # Output: clean transcript printed to stdout.
-# Also saved to /tmp/zoom_transcript_clean.txt.
+# Also saved to /tmp/zoom_transcript_{MEETING_ID}_{DATE}.txt
+# Raw merged data at /tmp/zoom_merged_{MEETING_ID}_{DATE}.txt
 
 set -euo pipefail
 
-MERGED_FILE="/tmp/zoom_merged.txt"
-CLEAN_FILE="/tmp/zoom_transcript_clean.txt"
+MEETING_ID="${1:-}"
+DATE=$(date +%Y%m%d_%H%M%S)
 
-# Clean up any prior run
-rm -f "$MERGED_FILE" "$CLEAN_FILE"
+# Auto-detect meeting ID if not provided
+if [ -z "$MEETING_ID" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    MEETING_ID=$("$SCRIPT_DIR/zoom-check.sh")
+fi
+
+MERGED_FILE="/tmp/zoom_merged_${MEETING_ID}_${DATE}.txt"
+CLEAN_FILE="/tmp/zoom_transcript_${MEETING_ID}_${DATE}.txt"
 
 # Step 1: Bulk-fetch all names and texts via AppleScript
 osascript << 'ASCRIPT' > "$MERGED_FILE"
@@ -44,10 +54,13 @@ return output
 ASCRIPT
 
 # Step 2: Parse merged S:/T: lines into clean transcript
-python3 << 'PYEOF'
-import re
+python3 - "$MERGED_FILE" "$CLEAN_FILE" << 'PYEOF'
+import re, sys
 
-with open('/tmp/zoom_merged.txt') as f:
+merged_file = sys.argv[1]
+clean_file = sys.argv[2]
+
+with open(merged_file) as f:
     lines = [l for l in f.read().strip().split('\n') if l]
 
 timestamp_re = re.compile(r'^(\d{1,2}:\d{2}:\d{2})(.*)', re.DOTALL)
@@ -83,7 +96,10 @@ for line in lines:
 flush()
 
 result = "\n\n".join(output_blocks)
-with open('/tmp/zoom_transcript_clean.txt', 'w') as f:
+with open(clean_file, 'w') as f:
     f.write(result)
 print(result)
 PYEOF
+
+echo "" >&2
+echo "Saved: $CLEAN_FILE" >&2
