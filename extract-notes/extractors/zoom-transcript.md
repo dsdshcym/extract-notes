@@ -20,7 +20,6 @@ The script:
 4. Parses into clean speaker-timestamped blocks via Python
 
 Output is printed to stdout and saved to `/tmp/zoom_transcript_{MEETING_ID}_{DATETIME}.txt`.
-Raw merged data saved to `/tmp/zoom_merged_{MEETING_ID}_{DATETIME}.txt`.
 
 ### Table structure
 

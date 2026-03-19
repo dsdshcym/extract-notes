@@ -10,7 +10,6 @@
 #
 # Output: clean transcript printed to stdout.
 # Also saved to /tmp/zoom_transcript_{MEETING_ID}_{DATE}.txt
-# Raw merged data at /tmp/zoom_merged_{MEETING_ID}_{DATE}.txt
 
 set -euo pipefail
 
@@ -46,8 +45,9 @@ if [ -z "$MEETING_ID" ]; then
     ' 2>/dev/null | grep -oE '[0-9]{9,}' || echo "unknown")
 fi
 
-MERGED_FILE="/tmp/zoom_merged_${MEETING_ID}_${DATE}.txt"
 CLEAN_FILE="/tmp/zoom_transcript_${MEETING_ID}_${DATE}.txt"
+MERGED_FILE=$(mktemp)
+trap 'rm -f "$MERGED_FILE"' EXIT
 
 # Step 1: Bulk-fetch all names and texts via AppleScript
 osascript << 'ASCRIPT' > "$MERGED_FILE"
