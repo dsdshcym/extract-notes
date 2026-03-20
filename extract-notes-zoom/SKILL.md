@@ -18,10 +18,14 @@ Extract transcript text from Zoom's standalone Transcript window via AppleScript
 
 ```
 $ARGUMENTS = [MEETING_ID] [notes-taking-skill]
+$ARGUMENTS = from FILE1 ++ FILE2 [++ FILE3 ...] [notes-taking-skill]
 ```
 
 - **MEETING_ID** (optional): numeric meeting ID. If omitted, extracted from invite link automatically.
 - **notes-taking-skill** (optional): passed through to extract-notes
+- **from FILE1 ++ FILE2**: concatenate multiple transcript files (e.g. after a network disconnect).
+  Read each file and concatenate their content in order before passing to extract-notes.
+  Skip Step 1 (extraction) — go directly to Step 3 (clean and format).
 
 ## Prerequisites
 
@@ -97,3 +101,19 @@ The script:
 6. Stops automatically when the Transcript window closes (meeting ended), or press Ctrl+C
 
 After the meeting ends, the live file can be passed to `extract-notes` for formatting.
+
+### Disconnect Recovery
+
+If Zoom disconnects and reconnects mid-meeting, the Transcript window resets — the new
+transcript only contains text from after the reconnect. The streaming script detects this
+(line count drops by >50%) and automatically backs up the pre-disconnect transcript to
+`{LIVE_FILE}.back` before overwriting.
+
+When reading a transcript file (either from `from FILE` arguments or after extraction),
+**always check for `.back` files**. If `{FILE}.back` exists, read it first and prepend
+its content before the main file. This handles disconnect recovery automatically without
+the user needing to specify both files.
+
+Multiple `.back` files (e.g. `.back.1`, `.back.2`) are read in order if they exist.
+
+The `++` syntax (`from FILE1 ++ FILE2`) is also supported for explicit concatenation.

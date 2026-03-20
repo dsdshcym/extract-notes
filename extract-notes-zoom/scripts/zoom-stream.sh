@@ -50,6 +50,7 @@ fi
 LIVE_FILE="/tmp/zoom_transcript_${MEETING_ID}_live.txt"
 CURR_RAW=$(mktemp)
 PREV_HASH=""
+PREV_LINE_COUNT=0
 trap 'rm -f "$CURR_RAW"' EXIT
 
 > "$LIVE_FILE"
@@ -159,8 +160,18 @@ while true; do
     if [ "$curr_hash" != "$PREV_HASH" ]; then
         parsed=$(parse_full "$CURR_RAW" || true)
         if [ -n "$parsed" ]; then
-            echo "$parsed" > "$LIVE_FILE"
             line_count=$(echo "$parsed" | wc -l | tr -d ' ')
+
+            # Detect transcript shrinkage (network disconnect / window reset)
+            # Auto-backup the longer version before overwriting
+            if [ "$PREV_LINE_COUNT" -gt 0 ] && [ "$line_count" -lt $((PREV_LINE_COUNT / 2)) ]; then
+                BACK_FILE="${LIVE_FILE}.back"
+                cp "$LIVE_FILE" "$BACK_FILE"
+                echo "[$(date +%H:%M:%S)] ⚠ Transcript shrank from ${PREV_LINE_COUNT} to ${line_count} lines (disconnect?). Backed up to ${BACK_FILE}" >&2
+            fi
+
+            echo "$parsed" > "$LIVE_FILE"
+            PREV_LINE_COUNT="$line_count"
             echo "[$(date +%H:%M:%S)] ${line_count} lines (updated)" >&2
         fi
         PREV_HASH="$curr_hash"
