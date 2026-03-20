@@ -3,6 +3,7 @@ name: extract-notes:zoom
 description: Extract notes from Zoom transcript window
 allowed-tools:
   - Bash(bash *zoom-extract.sh*)
+  - Bash(bash *zoom-stream.sh*)
   - Bash(wc:*)
   - Read
   - Skill(extract-notes)
@@ -75,3 +76,24 @@ Invoke `Skill(extract-notes)` to clean the extracted content and format as notes
 - Cmd+A / Cmd+C does not work in Zoom's native Transcript window
 - Window must be named "Transcript" (may differ in non-English Zoom)
 - Meeting ID is obtained by clicking "Copy invite link" from the Meeting menu (restores clipboard after)
+
+## Streaming Mode
+
+To stream the transcript live during a meeting:
+
+```bash
+bash ${CLAUDE_SKILL_DIR}/scripts/zoom-stream.sh [MEETING_ID] [INTERVAL]
+```
+
+- **MEETING_ID** (optional): same as above
+- **INTERVAL** (optional): seconds between polls (default: 1)
+
+The script:
+1. Polls the Transcript window every INTERVAL seconds
+2. Re-extracts the full transcript each poll (not just new lines) — handles in-place updates from ongoing speech recognition and concurrent speakers
+3. Only re-parses when content hash changes (avoids redundant writes)
+4. Overwrites `/tmp/zoom_transcript_{MEETING_ID}_live.txt` with the latest full transcript
+5. Prints progress to stderr (e.g., `[12:45:30] 283 lines (updated)`)
+6. Stops automatically when the Transcript window closes (meeting ended), or press Ctrl+C
+
+After the meeting ends, the live file can be passed to `extract-notes` for formatting.
