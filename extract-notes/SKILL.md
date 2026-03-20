@@ -2,24 +2,13 @@
 name: extract-notes
 description: Extract content from any source and format as notes
 allowed-tools:
-  - Bash(yt-dlp:*)
-  - Bash(ffmpeg:*)
-  - Bash(whisper-cli:*)
-  - Bash(jq:*)
-  - Bash(wc:*)
-  - Bash(emacsclient:*)
-  - Bash(osascript:*)
-  - Bash(python3:*)
-  - Bash(bash *zoom-extract.sh*)
-  - Read
   - Skill(taking-notes)
-  - Search
   - mcp__browser-control__*
 ---
 
 # Extract Notes
 
-Extract content from any source and format as notes.
+Shared pipeline for cleaning extracted content and formatting as notes. Also serves as entry point for source detection.
 
 ## Input
 
@@ -35,14 +24,13 @@ $ARGUMENTS = [source-or-heading] [notes-taking-skill]
 - **notes-taking-skill** (optional): Skill for note formatting
   - If omitted, uses `taking-notes`
 
-**Examples:**
-- `/extract-notes` → current browser tab, default format
-- `/extract-notes https://youtube.com/watch?v=xxx` → YouTube video
-- `/extract-notes ~/Documents/paper.pdf` → PDF file
-- `/extract-notes My Podcast Episode [[https://overcast.fm/+xxx][link]]` → Org heading with embedded URL
-- `/extract-notes https://example.com taking-notes-in-markdown` → webpage with custom format
+## Mode 1: Called from a sub-skill (extracted content in context)
 
-## Step 1: Parse Arguments
+If extracted content and metadata are already in the conversation (from extract-notes-zoom, extract-notes-ytb, etc.), skip to **Clean Content** below.
+
+## Mode 2: Called directly
+
+### Step 1: Parse Arguments
 
 ```
 If $ARGUMENTS contains [[url][...]] org link pattern:
@@ -60,68 +48,37 @@ Else:
   - Detect source from context (Step 2)
 ```
 
-### Extracting URL from Org heading
+#### Extracting URL from Org heading
 
 Org link format: `[[URL][description]]` or `[[URL]]`
 
 Regex to extract: `\[\[([^\]]+)\](?:\[[^\]]*\])?\]`
 
 Example: `My Podcast [[https://overcast.fm/+abc][Episode 123]]`
-→ URL: `https://overcast.fm/+abc`
+=> URL: `https://overcast.fm/+abc`
 
-## Step 2: Ensure Source is Accessible
+### Step 2: Detect Source & Route
 
-### If source URL was extracted from heading:
-
-1. Check if URL is already open (call concurrently for speed):
-   ```
-   PARALLEL:
-     - mcp__browser-control__get-current-tab
-     - mcp__browser-control__get-list-of-open-tabs
-   ```
-
-2. If current tab matches URL → proceed directly
-
-3. If found in other tabs → proceed (extractor will fetch content directly)
-
-4. If not found in any tab, open it:
-   ```
-   Use mcp__browser-control__open-browser-tab with the URL
-   ```
-
-### If source is empty:
-
-Detect from current browser tab:
+If no source provided, detect from current browser tab:
 ```
 Use mcp__browser-control__get-current-tab
 ```
 
-If browser tab unavailable, prompt user for source.
+Then suggest the appropriate sub-skill:
 
-### Match source against:
+| Pattern | Suggest |
+|---------|---------|
+| `youtube.com`, `youtu.be`, `bilibili.com`, `b23.tv` | `/extract-notes-ytb` |
+| `overcast.fm`, `ximalaya.com`, `xiaoyuzhoufm.com`, `podcasts.apple.com`, `castro.fm`, `pocketcasts.com`, `libsyn.com`, `anchor.fm`, `podbean.com`, `buzzsprout.com`, `transistor.fm` | `/extract-notes-podcast` |
+| Zoom transcript window | `/extract-notes-zoom` |
+| `.epub`, nov-mode | `/extract-notes-ebook` |
+| `http://`, `https://` (general webpage) | `/extract-notes-browser` |
 
-| Pattern | Extractor |
-|---------|-----------|
-| `youtube.com`, `youtu.be` | extractors/youtube.md |
-| `bilibili.com`, `b23.tv` | extractors/bilibili.md |
-| `overcast.fm`, `ximalaya.com`, `xiaoyuzhoufm.com`, `podcasts.apple.com`, `castro.fm`, `pocketcasts.com` | extractors/podcast.md |
-| `libsyn.com`, `anchor.fm`, `podbean.com`, `buzzsprout.com`, `transistor.fm` (audio hosts) | extractors/podcast.md |
-| `http://`, `https://` (with embedded `.mp3`/`.m4a` or audio player) | extractors/podcast.md |
-| `http://`, `https://` | extractors/webpage.md |
-| `.epub`, nov-mode | extractors/ebook.md |
-| `.pdf`, pdf-view-mode | extractors/pdf.md |
-| `.ppt`, `.pptx`, `.doc`, `.docx` | extractors/office.md |
-| `.mp3`, `.m4a`, `.wav`, `.flac` | extractors/audio.md |
-| `.mp4`, `.mkv`, `.mov`, `.webm` | extractors/video.md |
-| Zoom transcript (macOS native window) | extractors/zoom-transcript.md |
+Tell the user which sub-skill to use, e.g.: "This looks like a YouTube video. Use `/extract-notes-ytb <url>`"
 
-## Step 3: Extract Content
+**Exception**: For simple webpages, you may handle inline — fetch content via `mcp__browser-control__get-tab-web-content`, then proceed to Clean Content below.
 
-Follow the matched extractor file. Each extractor produces:
-- **metadata**: title, author/channel, date, source URL
-- **content**: transcript or article text
-
-## Step 3.5: Clean Extracted Content
+## Clean Content
 
 Before formatting, clean up extraction artifacts:
 
@@ -129,17 +86,17 @@ Before formatting, clean up extraction artifacts:
 - **OCR text**: Fix obvious OCR errors (l/1, O/0 confusion, broken words)
 - **HTML artifacts**: Strip remaining tags, navigation chrome, boilerplate footers
 - **Whisper Chinese punctuation**: whisper-cpp outputs half-width punctuation in Chinese text — convert to full-width:
-  + "," → "，" (comma)
-  + "." → "。" (period) — only when surrounded by CJK characters
-  + "?" → "？"
-  + "!" → "！"
-  + ":" → "：" — only when surrounded by CJK characters
-  + ";" → "；"
+  + "," => "，" (comma)
+  + "." => "。" (period) — only when surrounded by CJK characters
+  + "?" => "？"
+  + "!" => "！"
+  + ":" => "：" — only when surrounded by CJK characters
+  + ";" => "；"
 - **General**: Remove ad reads / sponsor segments if clearly marked, normalize whitespace
 
 The goal: clean raw text that reads naturally, ready for note-taking. Do NOT summarize or reorganize — only remove extraction noise.
 
-## Step 4: Format Notes
+## Format Notes
 
 ### If notes-taking-skill is provided:
 Invoke the format skill with extracted content.

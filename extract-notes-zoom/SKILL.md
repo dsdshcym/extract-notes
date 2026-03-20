@@ -1,13 +1,33 @@
-# Zoom Transcript Extraction (macOS Native Window)
+---
+name: extract-notes:zoom
+description: Extract notes from Zoom transcript window
+allowed-tools:
+  - Bash(bash *zoom-extract.sh*)
+  - Bash(wc:*)
+  - Read
+  - Skill(extract-notes)
+  - mcp__browser-control__*
+---
+
+# Extract Notes from Zoom Transcript
 
 Extract transcript text from Zoom's standalone Transcript window via AppleScript accessibility APIs.
+
+## Input
+
+```
+$ARGUMENTS = [MEETING_ID] [notes-taking-skill]
+```
+
+- **MEETING_ID** (optional): numeric meeting ID. If omitted, extracted from invite link automatically.
+- **notes-taking-skill** (optional): passed through to extract-notes
 
 ## Prerequisites
 
 - Zoom (`zoom.us`) running with a standalone "Transcript" window popped out
 - macOS Accessibility permissions granted to the calling process
 
-## Extract Transcript
+## Step 1: Extract Transcript
 
 ```bash
 bash ${CLAUDE_SKILL_DIR}/scripts/zoom-extract.sh [MEETING_ID]
@@ -37,23 +57,16 @@ For rows with 2 text areas, AppleScript's `(item as text)` concatenates them (e.
 
 When a new speaker row appears, the previous speaker's text must be flushed **before** `current_speaker` is updated. Otherwise the previous text block gets misattributed to the new speaker.
 
-## Output
+## Step 2: Prepare Metadata
 
-Clean transcript format:
-
-```
-Austin Bernard [14:01:54]:
-I'm a Senior Software Engineer at the Home Depot...
-
-Yiming Chen [14:03:02]:
-That's cool, yeah
-```
-
-Metadata:
 - **title**: derive from meeting context or ask user
 - **participants**: extracted from speaker names
 - **date**: today's date
 - **source**: Zoom meeting transcript
+
+## Step 3: Clean and Format
+
+Invoke `Skill(extract-notes)` to clean the extracted content and format as notes.
 
 ## Notes
 
