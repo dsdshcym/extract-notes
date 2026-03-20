@@ -96,7 +96,7 @@ The script:
 1. Polls the Transcript window every INTERVAL seconds
 2. Re-extracts the full transcript each poll (not just new lines) — handles in-place updates from ongoing speech recognition and concurrent speakers
 3. Only re-parses when content hash changes (avoids redundant writes)
-4. Overwrites `/tmp/zoom_transcript_{MEETING_ID}_live.txt` with the latest full transcript
+4. Overwrites `/tmp/zoom_transcript_{MEETING_ID}_{YYYYMMDD}_live.txt` with the latest full transcript
 5. Prints progress to stderr (e.g., `[12:45:30] 283 lines (updated)`)
 6. Stops automatically when the Transcript window closes (meeting ended), or press Ctrl+C
 

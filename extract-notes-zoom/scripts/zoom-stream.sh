@@ -47,7 +47,8 @@ if [ -z "$MEETING_ID" ]; then
     ' 2>/dev/null | grep -oE '[0-9]{9,}' || echo "unknown")
 fi
 
-LIVE_FILE="/tmp/zoom_transcript_${MEETING_ID}_live.txt"
+DATE_TAG=$(date +%Y%m%d)
+LIVE_FILE="/tmp/zoom_transcript_${MEETING_ID}_${DATE_TAG}_live.txt"
 CURR_RAW=$(mktemp)
 PREV_HASH=""
 PREV_LINE_COUNT=0
