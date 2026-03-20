@@ -8,6 +8,8 @@ allowed-tools:
   - Bash(jq:*)
   - Bash(python3:*)
   - Bash(wc:*)
+  - Bash(head:*)
+  - Bash(tail:*)
   - Read
   - Skill(extract-notes)
   - mcp__browser-control__*
