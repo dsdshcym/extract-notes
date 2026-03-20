@@ -2,6 +2,11 @@
 name: extract-notes
 description: Extract content from any source and format as notes
 allowed-tools:
+  - Skill(extract-notes-ytb)
+  - Skill(extract-notes-podcast)
+  - Skill(extract-notes-zoom)
+  - Skill(extract-notes-ebook)
+  - Skill(extract-notes-browser)
   - Skill(taking-notes)
   - mcp__browser-control__*
 ---
@@ -64,19 +69,17 @@ If no source provided, detect from current browser tab:
 Use mcp__browser-control__get-current-tab
 ```
 
-Then suggest the appropriate sub-skill:
+Then invoke the appropriate sub-skill directly:
 
-| Pattern | Suggest |
-|---------|---------|
-| `youtube.com`, `youtu.be`, `bilibili.com`, `b23.tv` | `/extract-notes-ytb` |
-| `overcast.fm`, `ximalaya.com`, `xiaoyuzhoufm.com`, `podcasts.apple.com`, `castro.fm`, `pocketcasts.com`, `libsyn.com`, `anchor.fm`, `podbean.com`, `buzzsprout.com`, `transistor.fm` | `/extract-notes-podcast` |
-| Zoom transcript window | `/extract-notes-zoom` |
-| `.epub`, nov-mode | `/extract-notes-ebook` |
-| `http://`, `https://` (general webpage) | `/extract-notes-browser` |
+| Pattern | Sub-skill |
+|---------|-----------|
+| `youtube.com`, `youtu.be`, `bilibili.com`, `b23.tv` | `extract-notes-ytb` |
+| `overcast.fm`, `ximalaya.com`, `xiaoyuzhoufm.com`, `podcasts.apple.com`, `castro.fm`, `pocketcasts.com`, `libsyn.com`, `anchor.fm`, `podbean.com`, `buzzsprout.com`, `transistor.fm` | `extract-notes-podcast` |
+| Zoom transcript window | `extract-notes-zoom` |
+| `.epub`, nov-mode | `extract-notes-ebook` |
+| `http://`, `https://` (general webpage) | `extract-notes-browser` |
 
-Tell the user which sub-skill to use, e.g.: "This looks like a YouTube video. Use `/extract-notes-ytb <url>`"
-
-**Exception**: For simple webpages, you may handle inline — fetch content via `mcp__browser-control__get-tab-web-content`, then proceed to Clean Content below.
+Use the Skill tool to invoke the matched sub-skill, passing the source URL/path as the argument. The sub-skill will handle extraction and call back into this skill for formatting.
 
 ## Clean Content
 
