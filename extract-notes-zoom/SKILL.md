@@ -2,7 +2,6 @@
 name: extract-notes:zoom
 description: Extract notes from Zoom transcript window
 allowed-tools:
-  - Bash(bash *zoom-extract.sh*)
   - Bash(bash *zoom-stream.sh*)
   - Bash(wc:*)
   - Read
@@ -18,13 +17,13 @@ Extract transcript text from Zoom's standalone Transcript window via AppleScript
 
 ```
 $ARGUMENTS = [MEETING_ID] [notes-taking-skill]
-$ARGUMENTS = from FILE1 ++ FILE2 [++ FILE3 ...] [notes-taking-skill]
+$ARGUMENTS = from FILE1 [++ FILE2 ...] [notes-taking-skill]
 ```
 
 - **MEETING_ID** (optional): numeric meeting ID. If omitted, extracted from invite link automatically.
 - **notes-taking-skill** (optional): passed through to extract-notes
-- **from FILE1 ++ FILE2**: concatenate multiple transcript files (e.g. after a network disconnect).
-  Read each file and concatenate their content in order before passing to extract-notes.
+- **from FILE1 [++ FILE2]**: read transcript files directly (e.g. from a previous streaming session).
+  Concatenate multiple files in order if `++` is used.
   Skip Step 1 (extraction) — go directly to Step 3 (clean and format).
 
 ## Prerequisites
@@ -35,16 +34,18 @@ $ARGUMENTS = from FILE1 ++ FILE2 [++ FILE3 ...] [notes-taking-skill]
 ## Step 1: Extract Transcript
 
 ```bash
-bash ${CLAUDE_SKILL_DIR}/scripts/zoom-extract.sh [MEETING_ID]
+bash ${CLAUDE_SKILL_DIR}/scripts/zoom-stream.sh [MEETING_ID] [INTERVAL]
 ```
 
 The script:
 1. Verifies the standalone Transcript window exists (exits 1 with message if not)
 2. Gets meeting ID from invite link if not provided as argument
-3. Bulk-fetches all speaker names and text areas via AppleScript
-4. Parses into clean speaker-timestamped blocks via Python
-
-Output is printed to stdout and saved to `/tmp/zoom_transcript_{MEETING_ID}_{DATETIME}.txt`.
+3. Polls the Transcript window every INTERVAL seconds (default: 1)
+4. Re-extracts the full transcript each poll — handles in-place updates from ongoing speech recognition and concurrent speakers
+5. Only re-parses when content hash changes (avoids redundant writes)
+6. Overwrites `/tmp/zoom_transcript_{MEETING_ID}_{YYYYMMDD}_live.txt` with the latest full transcript
+7. Prints progress to stderr (e.g., `[12:45:30] 283 lines (updated)`)
+8. Stops automatically when the Transcript window closes (meeting ended), or press Ctrl+C
 
 ### Table structure
 
@@ -61,6 +62,22 @@ For rows with 2 text areas, AppleScript's `(item as text)` concatenates them (e.
 ### Critical: flush before speaker change
 
 When a new speaker row appears, the previous speaker's text must be flushed **before** `current_speaker` is updated. Otherwise the previous text block gets misattributed to the new speaker.
+
+### Disconnect Recovery
+
+If Zoom disconnects and reconnects mid-meeting, the Transcript window resets — the new
+transcript only contains text from after the reconnect. The script detects this
+(line count drops by >50%) and automatically backs up the pre-disconnect transcript to
+`{LIVE_FILE}.back` before overwriting.
+
+When reading a transcript file (either from `from FILE` arguments or after extraction),
+**always check for `.back` files**. If `{FILE}.back` exists, read it first and prepend
+its content before the main file. This handles disconnect recovery automatically without
+the user needing to specify both files.
+
+Multiple `.back` files (e.g. `.back.1`, `.back.2`) are read in order if they exist.
+
+The `++` syntax (`from FILE1 ++ FILE2`) is also supported for explicit concatenation.
 
 ## Step 2: Prepare Metadata
 
@@ -80,40 +97,3 @@ Invoke `Skill(extract-notes)` to clean the extracted content and format as notes
 - Cmd+A / Cmd+C does not work in Zoom's native Transcript window
 - Window must be named "Transcript" (may differ in non-English Zoom)
 - Meeting ID is obtained by clicking "Copy invite link" from the Meeting menu (restores clipboard after)
-
-## Streaming Mode
-
-To stream the transcript live during a meeting:
-
-```bash
-bash ${CLAUDE_SKILL_DIR}/scripts/zoom-stream.sh [MEETING_ID] [INTERVAL]
-```
-
-- **MEETING_ID** (optional): same as above
-- **INTERVAL** (optional): seconds between polls (default: 1)
-
-The script:
-1. Polls the Transcript window every INTERVAL seconds
-2. Re-extracts the full transcript each poll (not just new lines) — handles in-place updates from ongoing speech recognition and concurrent speakers
-3. Only re-parses when content hash changes (avoids redundant writes)
-4. Overwrites `/tmp/zoom_transcript_{MEETING_ID}_{YYYYMMDD}_live.txt` with the latest full transcript
-5. Prints progress to stderr (e.g., `[12:45:30] 283 lines (updated)`)
-6. Stops automatically when the Transcript window closes (meeting ended), or press Ctrl+C
-
-After the meeting ends, the live file can be passed to `extract-notes` for formatting.
-
-### Disconnect Recovery
-
-If Zoom disconnects and reconnects mid-meeting, the Transcript window resets — the new
-transcript only contains text from after the reconnect. The streaming script detects this
-(line count drops by >50%) and automatically backs up the pre-disconnect transcript to
-`{LIVE_FILE}.back` before overwriting.
-
-When reading a transcript file (either from `from FILE` arguments or after extraction),
-**always check for `.back` files**. If `{FILE}.back` exists, read it first and prepend
-its content before the main file. This handles disconnect recovery automatically without
-the user needing to specify both files.
-
-Multiple `.back` files (e.g. `.back.1`, `.back.2`) are read in order if they exist.
-
-The `++` syntax (`from FILE1 ++ FILE2`) is also supported for explicit concatenation.
