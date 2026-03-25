@@ -18,24 +18,46 @@ import sys
 
 def parse_srt(path):
     with open(path, 'r') as f:
-        content = f.read()
+        lines = f.readlines()
 
-    blocks = re.split(r'\n\n+', content.strip())
     entries = []
-
-    for block in blocks:
-        parts = block.strip().split('\n')
-        if len(parts) < 3:
+    i = 0
+    while i < len(lines):
+        # Skip blank lines between blocks
+        if not lines[i].strip():
+            i += 1
             continue
 
-        m = re.match(r'(\d+):(\d+):(\d+),(\d+)', parts[1])
+        # Expect block index (integer)
+        if not lines[i].strip().isdigit():
+            i += 1
+            continue
+        i += 1
+
+        # Expect timestamp line
+        if i >= len(lines):
+            break
+        ts_line = lines[i].strip()
+        m = re.match(r'(\d+):(\d+):(\d+),(\d+)', ts_line)
         if not m:
+            i += 1
             continue
-
         h, mn, s, ms = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
         start_sec = h * 3600 + mn * 60 + s + ms / 1000
+        i += 1
 
-        text = ' '.join(l.strip() for l in parts[2:] if l.strip())
+        # Collect text lines (skip blanks, stop at next block index or EOF)
+        text_lines = []
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+            if stripped.isdigit():
+                break  # next block index — don't consume
+            if stripped:
+                text_lines.append(stripped)
+            i += 1
+
+        text = ' '.join(text_lines)
         if text:
             entries.append((start_sec, text))
 
