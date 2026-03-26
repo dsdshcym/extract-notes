@@ -205,7 +205,7 @@ stream_meeting() {
         session_id=$(cd "$HOME/Org" && claude -p "/extract-notes-zoom from $live_file" \
                 --settings "$HOME/.claude/settings.work.json" \
                 --output-format json 2>/dev/null \
-            | python3 -c "import sys,json; print(json.load(sys.stdin).get('session_id',''))" 2>/dev/null) || true
+            | jq -r '.session_id // empty' 2>/dev/null) || true
 
         if [ -n "$session_id" ]; then
             echo "[$(date +%H:%M:%S)] Notes extracted. Resume: claude -r $session_id" >&2
