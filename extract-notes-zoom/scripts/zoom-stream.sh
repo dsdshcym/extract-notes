@@ -195,6 +195,26 @@ stream_meeting() {
     final_lines=$(wc -l < "$live_file" | tr -d ' ')
     echo "[$(date +%H:%M:%S)] Final transcript: $live_file ($final_lines lines)" >&2
     notify "Zoom Transcript" "Meeting ended — $final_lines lines saved to $live_file"
+
+    # Auto-extract notes in daemon mode
+    if [ "$DAEMON" = true ] && [ "$final_lines" -gt 0 ]; then
+        echo "[$(date +%H:%M:%S)] Extracting notes via claude -p ..." >&2
+        notify "Zoom Transcript" "Extracting notes from $live_file ..."
+
+        local session_id
+        session_id=$(cd "$HOME/Org" && claude -p "/extract-notes-zoom from $live_file" \
+                --settings "$HOME/.claude/settings.work.json" \
+                --output-format json 2>/dev/null \
+            | python3 -c "import sys,json; print(json.load(sys.stdin).get('session_id',''))" 2>/dev/null) || true
+
+        if [ -n "$session_id" ]; then
+            echo "[$(date +%H:%M:%S)] Notes extracted. Resume: claude -r $session_id" >&2
+            notify "Zoom Notes Ready" "claude -r $session_id"
+        else
+            echo "[$(date +%H:%M:%S)] Note extraction failed or no session ID" >&2
+            notify "Zoom Notes" "Extraction failed — transcript at $live_file"
+        fi
+    fi
 }
 
 # --- Main ---
