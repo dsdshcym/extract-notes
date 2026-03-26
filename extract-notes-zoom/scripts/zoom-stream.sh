@@ -4,36 +4,50 @@
 # re-extracting the full transcript each time (handles in-place updates
 # from ongoing speech recognition and concurrent speakers).
 #
-# Usage: zoom-stream.sh [MEETING_ID] [INTERVAL]
+# Usage: zoom-stream.sh [--daemon] [MEETING_ID] [INTERVAL]
+#   --daemon: run forever, auto-detecting meetings (for launchd)
 #   MEETING_ID: numeric meeting ID (default: from invite link or "unknown")
 #   INTERVAL: seconds between polls (default: 1)
 #
-# Requires: standalone "Transcript" window popped out in Zoom.
+# Single-meeting mode: requires standalone "Transcript" window popped out.
+# Daemon mode: waits for Transcript window, streams, repeats on next meeting.
+# TODO: create launchd agent (com.zoom-transcript.daemon.plist) to auto-start on login
 #
-# Output: continuously updates /tmp/zoom_transcript_{MEETING_ID}_live.txt
-# Press Ctrl+C to stop.
+# Output: continuously updates /tmp/zoom_transcript_{MEETING_ID}_{DATE}_live.txt
 
 set -euo pipefail
 
-MEETING_ID="${1:-}"
-INTERVAL="${2:-1}"
-
-# Verify standalone Transcript window exists
-windows=$(osascript -e '
-tell application "System Events"
-    tell process "zoom.us"
-        get name of every window
-    end tell
-end tell
-')
-if ! echo "$windows" | grep -q "Transcript"; then
-    echo "No standalone Transcript window found. Please pop out the transcript panel in Zoom." >&2
-    exit 1
+DAEMON=false
+if [ "${1:-}" = "--daemon" ]; then
+    DAEMON=true
+    shift
 fi
 
-# Get meeting ID from invite link if not provided
-if [ -z "$MEETING_ID" ]; then
-    MEETING_ID=$(osascript -e '
+MEETING_ID="${1:-}"
+INTERVAL="${2:-1}"
+IDLE_INTERVAL=5  # seconds between checks when waiting for a meeting
+
+# --- Shared functions ---
+
+notify() {
+    local title="$1" message="$2"
+    osascript -e "display notification \"$message\" with title \"$title\"" 2>/dev/null || true
+}
+
+transcript_window_exists() {
+    osascript -e '
+    tell application "System Events"
+        if not (exists process "zoom.us") then return "no"
+        tell process "zoom.us"
+            if exists window "Transcript" then return "yes"
+        end tell
+    end tell
+    return "no"
+    ' 2>/dev/null
+}
+
+get_meeting_id() {
+    osascript -e '
     set oldClip to the clipboard
     tell application "System Events"
         tell process "zoom.us"
@@ -44,20 +58,8 @@ if [ -z "$MEETING_ID" ]; then
     set inviteLink to the clipboard as text
     set the clipboard to oldClip
     return inviteLink
-    ' 2>/dev/null | grep -oE '[0-9]{9,}' || echo "unknown")
-fi
-
-DATE_TAG=$(date +%Y%m%d)
-LIVE_FILE="/tmp/zoom_transcript_${MEETING_ID}_${DATE_TAG}_live.txt"
-CURR_RAW=$(mktemp)
-PREV_HASH=""
-PREV_LINE_COUNT=0
-trap 'rm -f "$CURR_RAW"' EXIT
-
-> "$LIVE_FILE"
-
-echo "Streaming transcript to: $LIVE_FILE" >&2
-echo "Polling every ${INTERVAL}s. Press Ctrl+C to stop." >&2
+    ' 2>/dev/null | grep -oE '[0-9]{9,}' || echo "unknown"
+}
 
 fetch_raw() {
     osascript << 'ASCRIPT'
@@ -136,49 +138,86 @@ if output_blocks:
 PYEOF
 }
 
-transcript_window_exists() {
-    osascript -e '
-    tell application "System Events"
-        tell process "zoom.us"
-            if exists window "Transcript" then return "yes"
-        end tell
-    end tell
-    return "no"
-    ' 2>/dev/null
+# --- Stream one meeting ---
+
+stream_meeting() {
+    local mid="$1"
+    local date_tag
+    date_tag=$(date +%Y%m%d)
+    local live_file="/tmp/zoom_transcript_${mid}_${date_tag}_live.txt"
+    local curr_raw
+    curr_raw=$(mktemp)
+    local prev_hash="" prev_line_count=0
+
+    > "$live_file"
+
+    echo "[$(date +%H:%M:%S)] Streaming transcript to: $live_file" >&2
+    notify "Zoom Transcript" "Streaming meeting $mid → $live_file"
+
+    while true; do
+        if [ "$(transcript_window_exists)" != "yes" ]; then
+            echo "[$(date +%H:%M:%S)] Transcript window closed. Meeting ended." >&2
+            break
+        fi
+
+        fetch_raw > "$curr_raw" 2>/dev/null || true
+
+        local curr_hash
+        curr_hash=$(md5 -q "$curr_raw" 2>/dev/null || md5sum "$curr_raw" | cut -d' ' -f1)
+        if [ "$curr_hash" != "$prev_hash" ]; then
+            local parsed
+            parsed=$(parse_full "$curr_raw" || true)
+            if [ -n "$parsed" ]; then
+                local line_count
+                line_count=$(echo "$parsed" | wc -l | tr -d ' ')
+
+                # Detect transcript shrinkage (network disconnect / window reset)
+                if [ "$prev_line_count" -gt 0 ] && [ "$line_count" -lt $((prev_line_count / 2)) ]; then
+                    local back_file="${live_file}.back"
+                    cp "$live_file" "$back_file"
+                    echo "[$(date +%H:%M:%S)] ⚠ Transcript shrank from ${prev_line_count} to ${line_count} lines (disconnect?). Backed up to ${back_file}" >&2
+                    notify "Zoom Transcript" "⚠ Disconnect detected — backed up ${prev_line_count} lines"
+                fi
+
+                echo "$parsed" > "$live_file"
+                prev_line_count="$line_count"
+                echo "[$(date +%H:%M:%S)] ${line_count} lines (updated)" >&2
+            fi
+            prev_hash="$curr_hash"
+        fi
+
+        sleep "$INTERVAL"
+    done
+
+    rm -f "$curr_raw"
+
+    local final_lines
+    final_lines=$(wc -l < "$live_file" | tr -d ' ')
+    echo "[$(date +%H:%M:%S)] Final transcript: $live_file ($final_lines lines)" >&2
+    notify "Zoom Transcript" "Meeting ended — $final_lines lines saved to $live_file"
 }
 
-while true; do
-    # Stop if Transcript window closed (meeting ended)
-    if [ "$(transcript_window_exists)" != "yes" ]; then
-        echo "[$(date +%H:%M:%S)] Transcript window closed. Stopping." >&2
-        break
-    fi
+# --- Main ---
 
-    fetch_raw > "$CURR_RAW" 2>/dev/null || true
+if [ "$DAEMON" = true ]; then
+    echo "[$(date +%H:%M:%S)] Daemon mode: waiting for Zoom Transcript window..." >&2
 
-    # Only re-parse if content changed
-    curr_hash=$(md5 -q "$CURR_RAW" 2>/dev/null || md5sum "$CURR_RAW" | cut -d' ' -f1)
-    if [ "$curr_hash" != "$PREV_HASH" ]; then
-        parsed=$(parse_full "$CURR_RAW" || true)
-        if [ -n "$parsed" ]; then
-            line_count=$(echo "$parsed" | wc -l | tr -d ' ')
-
-            # Detect transcript shrinkage (network disconnect / window reset)
-            # Auto-backup the longer version before overwriting
-            if [ "$PREV_LINE_COUNT" -gt 0 ] && [ "$line_count" -lt $((PREV_LINE_COUNT / 2)) ]; then
-                BACK_FILE="${LIVE_FILE}.back"
-                cp "$LIVE_FILE" "$BACK_FILE"
-                echo "[$(date +%H:%M:%S)] ⚠ Transcript shrank from ${PREV_LINE_COUNT} to ${line_count} lines (disconnect?). Backed up to ${BACK_FILE}" >&2
-            fi
-
-            echo "$parsed" > "$LIVE_FILE"
-            PREV_LINE_COUNT="$line_count"
-            echo "[$(date +%H:%M:%S)] ${line_count} lines (updated)" >&2
+    while true; do
+        if [ "$(transcript_window_exists)" = "yes" ]; then
+            mid="${MEETING_ID:-$(get_meeting_id)}"
+            stream_meeting "$mid"
+            # Reset for next meeting
+            echo "[$(date +%H:%M:%S)] Waiting for next meeting..." >&2
         fi
-        PREV_HASH="$curr_hash"
+        sleep "$IDLE_INTERVAL"
+    done
+else
+    # Single-meeting mode (original behavior)
+    if [ "$(transcript_window_exists)" != "yes" ]; then
+        echo "No standalone Transcript window found. Please pop out the transcript panel in Zoom." >&2
+        exit 1
     fi
 
-    sleep "$INTERVAL"
-done
-
-echo "Final transcript: $LIVE_FILE" >&2
+    mid="${MEETING_ID:-$(get_meeting_id)}"
+    stream_meeting "$mid"
+fi
