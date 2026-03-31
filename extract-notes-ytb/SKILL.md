@@ -2,15 +2,16 @@
 name: extract-notes:ytb
 description: Extract notes from YouTube or Bilibili videos
 allowed-tools:
-  - Bash(yt-dlp:*)
-  - Bash(ffmpeg:*)
-  - Bash(whisper-cli:*)
-  - Bash(jq:*)
-  - Bash(python3:*)
-  - Bash(wc:*)
-  - Bash(head:*)
-  - Bash(tail:*)
+  - Bash(yt-dlp *)
+  - Bash(ffmpeg *)
+  - Bash(whisper-cli *)
+  - Bash(jq *)
+  - Bash(python3 *)
+  - Bash(wc *)
+  - Bash(head *)
+  - Bash(tail *)
   - Read
+  - Read(/tmp/*)
   - Skill(extract-notes)
   - mcp__browser-control__*
 ---
