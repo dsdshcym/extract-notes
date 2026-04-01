@@ -54,14 +54,14 @@ if [ "$(chat_window_exists)" != "yes" ]; then
     tell application "System Events"
         tell process "zoom.us"
             set frontmost to true
-            delay 0.3
+            delay 0.1
             perform action "AXRaise" of window "Zoom Meeting"
-            delay 0.3
+            delay 0.1
             keystroke "h" using {command down, shift down}
         end tell
     end tell
     '
-    sleep 1
+    sleep 0.5
 
     if [ "$(chat_window_exists)" != "yes" ]; then
         echo "Failed to open Chat window." >&2
@@ -72,7 +72,7 @@ fi
 # --- Create timestamp marker before save ---
 
 MARKER=$(mktemp)
-sleep 1  # ensure marker is older than any file Zoom creates
+sleep 0.1  # ensure marker is older than any file Zoom creates
 
 # --- Click More > Save chat ---
 
@@ -95,9 +95,9 @@ tell application "System Events"
             end if
         end repeat
 
-        delay 0.5
+        delay 0.1
         key code 125 -- arrow down (select "Save chat")
-        delay 0.2
+        delay 0.1
         key code 36 -- return
     end tell
 end tell
