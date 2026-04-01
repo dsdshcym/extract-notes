@@ -3,6 +3,7 @@ name: extract-notes:zoom
 description: Extract notes from Zoom transcript window
 allowed-tools:
   - Bash(bash *zoom-stream.sh*)
+  - Bash(bash *zoom-chat.sh*)
   - Bash(wc:*)
   - Read
   - Skill(extract-notes)
@@ -17,7 +18,7 @@ Extract transcript text from Zoom's standalone Transcript window via AppleScript
 
 ```
 $ARGUMENTS = [MEETING_ID] [notes-taking-skill]
-$ARGUMENTS = from FILE1 [++ FILE2 ...] [notes-taking-skill]
+$ARGUMENTS = from FILE1 [++ FILE2 ...] [chat CHAT_FILE] [notes-taking-skill]
 ```
 
 - **MEETING_ID** (optional): numeric meeting ID. If omitted, extracted from invite link automatically.
@@ -25,6 +26,8 @@ $ARGUMENTS = from FILE1 [++ FILE2 ...] [notes-taking-skill]
 - **from FILE1 [++ FILE2]**: read transcript files directly (e.g. from a previous streaming session).
   Concatenate multiple files in order if `++` is used.
   Skip Step 1 (extraction) — go directly to Step 3 (clean and format).
+- **chat CHAT_FILE**: provide a Zoom saved chat file to incorporate alongside the transcript.
+  If omitted, check the same `~/Documents/Zoom/` meeting folder for `meeting_saved_new_chat.txt`.
 
 ## Prerequisites
 
@@ -97,3 +100,22 @@ Invoke `Skill(extract-notes)` to clean the extracted content and format as notes
 - Cmd+A / Cmd+C does not work in Zoom's native Transcript window
 - Window must be named "Transcript" (may differ in non-English Zoom)
 - Meeting ID is obtained by clicking "Copy invite link" from the Meeting menu (restores clipboard after)
+
+## Chat Files
+
+Zoom saves chat to `~/Documents/Zoom/<meeting-folder>/meeting_saved_new_chat.txt` via
+the `zoom-chat.sh` script (More menu > Save chat). Format:
+
+```
+2026-04-01 11:45:00 From Sender Name to Everyone:
+	message text
+```
+
+When processing a transcript, **check for a chat file** in the same Zoom meeting folder.
+If a chat file exists (or is provided as an additional argument), incorporate it into notes:
+- Questions asked in chat that were addressed verbally in the transcript
+- Links, resources, or references shared in chat
+- Reactions or sentiments expressed in chat (e.g. appreciation, concerns)
+- Side discussions in chat that add context to the spoken conversation
+
+The `from` syntax supports both: `from TRANSCRIPT_FILE chat CHAT_FILE`
