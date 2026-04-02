@@ -230,12 +230,7 @@ stream_meeting() {
                 # Save to org file if --notes-dir is set
                 if [ -n "$NOTES_DIR" ]; then
                     local notes_file="${NOTES_DIR}/$(date +%Y-%m-%d)_${mid}.org"
-                    local session_link="[[claude-session:~/Org/::${session_id}][claude:extract-notes-zoom ${mid}]]"
-                    {
-                        echo "${session_link}"
-                        echo ""
-                        echo "$notes_text"
-                    } > "$notes_file"
+                    echo "$notes_text" > "$notes_file"
                     echo "[$(date +%H:%M:%S)] Notes saved to $notes_file" >&2
                     notify "Zoom Notes Ready" "$notes_file"
                 else
