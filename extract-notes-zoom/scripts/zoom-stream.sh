@@ -4,8 +4,9 @@
 # re-extracting the full transcript each time (handles in-place updates
 # from ongoing speech recognition and concurrent speakers).
 #
-# Usage: zoom-stream.sh [--daemon] [MEETING_ID] [INTERVAL]
+# Usage: zoom-stream.sh [--daemon] [--notes-dir=DIR] [MEETING_ID] [INTERVAL]
 #   --daemon: run forever, auto-detecting meetings (for launchd)
+#   --notes-dir=DIR: save extracted notes as org files in DIR (default: no file output)
 #   MEETING_ID: numeric meeting ID (default: from invite link or "unknown")
 #   INTERVAL: seconds between polls (default: 1)
 #
@@ -18,9 +19,21 @@
 set -euo pipefail
 
 DAEMON=false
-if [ "${1:-}" = "--daemon" ]; then
-    DAEMON=true
-    shift
+NOTES_DIR=""
+
+while [[ "${1:-}" == --* ]]; do
+    case "$1" in
+        --daemon) DAEMON=true; shift ;;
+        --notes-dir=*) NOTES_DIR="${1#--notes-dir=}"; shift ;;
+        --notes-dir) NOTES_DIR="$2"; shift 2 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+# Expand tilde in NOTES_DIR
+if [ -n "$NOTES_DIR" ]; then
+    NOTES_DIR="${NOTES_DIR/#\~/$HOME}"
+    mkdir -p "$NOTES_DIR"
 fi
 
 MEETING_ID="${1:-}"
@@ -202,15 +215,32 @@ stream_meeting() {
             echo "[$(date +%H:%M:%S)] Extracting notes via claude -p (background) ..." >&2
             notify "Zoom Transcript" "Extracting notes from $live_file ..."
 
-            local session_id
-            session_id=$(cd "$HOME/Org" && claude -p "/extract-notes-zoom from $live_file" \
+            local json_output
+            json_output=$(cd "$HOME/Org" && claude -p "/extract-notes-zoom from $live_file" \
                     --settings "$HOME/.claude/settings.work.json" \
-                    --output-format json 2>/dev/null \
-                | jq -r '.session_id // empty' 2>/dev/null) || true
+                    --output-format json 2>/dev/null) || true
 
-            if [ -n "$session_id" ]; then
+            local session_id notes_text
+            session_id=$(echo "$json_output" | jq -r '.session_id // empty' 2>/dev/null) || true
+            notes_text=$(echo "$json_output" | jq -r '.result // empty' 2>/dev/null) || true
+
+            if [ -n "$session_id" ] && [ -n "$notes_text" ]; then
                 echo "[$(date +%H:%M:%S)] Notes extracted. Resume: claude -r $session_id" >&2
-                notify "Zoom Notes Ready" "claude -r $session_id"
+
+                # Save to org file if --notes-dir is set
+                if [ -n "$NOTES_DIR" ]; then
+                    local notes_file="${NOTES_DIR}/$(date +%Y-%m-%d)_${mid}.org"
+                    local session_link="[[claude-session:~/Org/::${session_id}][claude:extract-notes-zoom ${mid}]]"
+                    {
+                        echo "${session_link}"
+                        echo ""
+                        echo "$notes_text"
+                    } > "$notes_file"
+                    echo "[$(date +%H:%M:%S)] Notes saved to $notes_file" >&2
+                    notify "Zoom Notes Ready" "$notes_file"
+                else
+                    notify "Zoom Notes Ready" "claude -r $session_id"
+                fi
             else
                 echo "[$(date +%H:%M:%S)] Note extraction failed or no session ID" >&2
                 notify "Zoom Notes" "Extraction failed — transcript at $live_file"
