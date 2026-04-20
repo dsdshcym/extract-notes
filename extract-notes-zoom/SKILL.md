@@ -6,6 +6,7 @@ allowed-tools:
   - Bash(bash *zoom-chat.sh*)
   - Bash(wc:*)
   - Read
+  - Skill(driving-browser)
   - Skill(extract-notes)
   - Bash(browser-control-cli:*)
 ---

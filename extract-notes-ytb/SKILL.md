@@ -6,6 +6,7 @@ allowed-tools:
   - Bash(jq *)
   - Read
   - Read(/tmp/*)
+  - Skill(driving-browser)
   - Skill(extract-notes)
   - Bash(browser-control-cli:*)
 ---
@@ -13,6 +14,8 @@ allowed-tools:
 # Extract Notes from YouTube / Bilibili
 
 Extract transcript from YouTube or Bilibili videos and format as notes.
+
+**Before using any `browser-control-cli` commands, invoke `Skill(driving-browser)` to load the full CLI reference.**
 Most steps are codified in `scripts/extract-transcript.sh`; you only do two
 things: (1) generate a whisper prompt when asked, (2) take notes from the
 final transcript.

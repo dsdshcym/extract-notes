@@ -10,13 +10,18 @@ allowed-tools:
   - Bash(curl:*)
   - Bash(wc:*)
   - Read
+  - Skill(driving-browser)
   - Skill(extract-notes)
   - Bash(browser-control-cli:*)
+  - Bash(markitdown:*)
+  - Bash(pandoc:*)
 ---
 
 # Extract Notes from Podcast
 
 Extract transcript from podcast episodes and format as notes.
+
+**Before using any `browser-control-cli` commands, invoke `Skill(driving-browser)` to load the full CLI reference.**
 
 ## Input
 

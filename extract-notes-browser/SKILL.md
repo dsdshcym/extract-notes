@@ -3,13 +3,19 @@ name: extract-notes:browser
 description: Extract notes from a webpage in the browser
 allowed-tools:
   - Bash(browser-control-cli:*)
+  - Bash(jq:*)
+  - Bash(markitdown:*)
+  - Bash(pandoc:*)
   - Read
+  - Skill(driving-browser)
   - Skill(extract-notes)
 ---
 
 # Extract Notes from Browser Webpage
 
 Extract content from the current browser tab (or a specific URL) and format as notes.
+
+**Before using any `browser-control-cli` commands, invoke `Skill(driving-browser)` to load the full CLI reference (command shapes, converter pipelines, truncation handling, common mistakes).**
 
 ## Input
 

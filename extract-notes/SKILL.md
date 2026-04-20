@@ -8,6 +8,7 @@ allowed-tools:
   - Skill(extract-notes-ebook)
   - Skill(extract-notes-browser)
   - Skill(taking-notes)
+  - Skill(driving-browser)
   - Bash(browser-control-cli:*)
 ---
 
@@ -64,7 +65,7 @@ Example: `My Podcast [[https://overcast.fm/+abc][Episode 123]]`
 
 ### Step 2: Detect Source & Route
 
-If no source provided, detect from current browser tab:
+If no source provided, detect from current browser tab — first invoke `Skill(driving-browser)` for the full CLI reference, then:
 ```bash
 browser-control-cli current-tab
 ```
