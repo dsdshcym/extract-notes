@@ -8,7 +8,7 @@ allowed-tools:
   - Skill(extract-notes-ebook)
   - Skill(extract-notes-browser)
   - Skill(taking-notes)
-  - mcp__browser-control__*
+  - Bash(browser-control-cli:*)
 ---
 
 # Extract Notes
@@ -65,8 +65,8 @@ Example: `My Podcast [[https://overcast.fm/+abc][Episode 123]]`
 ### Step 2: Detect Source & Route
 
 If no source provided, detect from current browser tab:
-```
-Use mcp__browser-control__get-current-tab
+```bash
+browser-control-cli current-tab
 ```
 
 Then invoke the appropriate sub-skill directly:

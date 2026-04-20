@@ -2,7 +2,7 @@
 name: extract-notes:browser
 description: Extract notes from a webpage in the browser
 allowed-tools:
-  - mcp__browser-control__*
+  - Bash(browser-control-cli:*)
   - Read
   - Skill(extract-notes)
 ---
@@ -41,25 +41,25 @@ Else:
 
 If URL was provided, check if it's already open:
 
-```
-PARALLEL:
-  - mcp__browser-control__get-current-tab
-  - mcp__browser-control__get-list-of-open-tabs
+```bash
+# Run in parallel
+browser-control-cli current-tab
+browser-control-cli list-tabs
 ```
 
 - Current tab matches URL => proceed
 - Found in other tabs => use that tab ID
-- Not found => open with `mcp__browser-control__open-browser-tab`
+- Not found => open with `browser-control-cli open-tab {URL}`
 
 If no URL provided:
-```
-Use mcp__browser-control__get-current-tab
+```bash
+browser-control-cli current-tab
 ```
 
 ## Step 3: Extract Content
 
-```
-Use mcp__browser-control__get-tab-web-content with the tab ID
+```bash
+browser-control-cli get-content {TAB_ID}
 ```
 
 From the page content, identify:

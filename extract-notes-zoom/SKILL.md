@@ -7,7 +7,7 @@ allowed-tools:
   - Bash(wc:*)
   - Read
   - Skill(extract-notes)
-  - mcp__browser-control__*
+  - Bash(browser-control-cli:*)
 ---
 
 # Extract Notes from Zoom Transcript

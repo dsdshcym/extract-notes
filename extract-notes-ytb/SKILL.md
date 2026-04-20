@@ -13,7 +13,7 @@ allowed-tools:
   - Read
   - Read(/tmp/*)
   - Skill(extract-notes)
-  - mcp__browser-control__*
+  - Bash(browser-control-cli:*)
 ---
 
 # Extract Notes from YouTube / Bilibili
@@ -42,7 +42,7 @@ Else if first arg starts with http://, https://:
   - First arg = URL
   - Second arg (if any) = notes-taking-skill
 Else:
-  - Detect from current browser tab via mcp__browser-control__get-current-tab
+  - Detect from current browser tab via `browser-control-cli current-tab`
 ```
 
 ## Step 2: Detect Platform
