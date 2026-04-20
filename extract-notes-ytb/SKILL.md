@@ -2,11 +2,14 @@
 name: extract-notes:ytb
 description: Extract notes from YouTube or Bilibili videos
 allowed-tools:
-  - Bash(yt-dlp *)
-  - Bash(ffmpeg *)
-  - Bash(whisper-cli *)
+  - Bash(${CLAUDE_SKILL_DIR}/scripts/video-metadata.sh:*)
+  - Bash(${CLAUDE_SKILL_DIR}/scripts/video-list-subs.sh:*)
+  - Bash(${CLAUDE_SKILL_DIR}/scripts/video-download-subs.sh:*)
+  - Bash(${CLAUDE_SKILL_DIR}/scripts/video-download-audio.sh:*)
+  - Bash(${CLAUDE_SKILL_DIR}/scripts/audio-to-wav.sh:*)
+  - Bash(${CLAUDE_SKILL_DIR}/scripts/transcribe.sh:*)
+  - Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/srt_dedup.py:*)
   - Bash(jq *)
-  - Bash(python3 *)
   - Bash(wc *)
   - Bash(head *)
   - Bash(tail *)
@@ -47,27 +50,33 @@ Else:
 
 ## Step 2: Detect Platform
 
-| URL pattern | Platform | Temp prefix | Cookie flag |
-|-------------|----------|-------------|-------------|
-| `youtube.com`, `youtu.be` | YouTube | `/tmp/yt-` | `--cookies-from-browser "firefox:~/Library/Application Support/Firefox/Profiles/hcmmkzdc.dev-edition-default"` |
-| `bilibili.com`, `b23.tv` | Bilibili | `/tmp/bili-` | `--cookies-from-browser "firefox:~/Library/Application Support/Firefox/Profiles/hcmmkzdc.dev-edition-default"` |
+| URL pattern | Platform | Temp prefix |
+|-------------|----------|-------------|
+| `youtube.com`, `youtu.be` | YouTube | `/tmp/yt-` |
+| `bilibili.com`, `b23.tv` | Bilibili | `/tmp/bili-` |
 
-Bilibili requires cookie authentication to avoid HTTP 412 errors.
+Wrapper scripts auto-apply Firefox cookies for both platforms (Bilibili needs them to avoid HTTP 412).
 
 ## Step 3: Fetch Video Metadata
 
 ```bash
-yt-dlp {COOKIES} -j "{URL}" 2>/dev/null | jq '{title, channel, uploader, duration_string, chapters, description}'
+${CLAUDE_SKILL_DIR}/scripts/video-metadata.sh "{URL}"
 ```
 
-Output: title, channel/uploader, chapters (if any), description.
+Returns raw yt-dlp JSON on stdout. Pipe through `jq` to extract fields:
+
+```bash
+${CLAUDE_SKILL_DIR}/scripts/video-metadata.sh "{URL}" | jq '{title, channel, uploader, duration_string, chapters, description}'
+```
+
+Useful fields: `.title`, `.channel` (YouTube) or `.uploader` (Bilibili), `.duration_string`, `.chapters` (array of `{start_time, end_time, title}` or null), `.description`.
 
 ## Step 4: Get Transcript
 
 ### 4a: List available subtitles
 
 ```bash
-yt-dlp {COOKIES} --list-subs "{URL}" 2>&1 | head -30
+${CLAUDE_SKILL_DIR}/scripts/video-list-subs.sh "{URL}"
 ```
 
 The output shows two sections:
@@ -88,36 +97,34 @@ Priority:
 ### 4c: Download subtitle
 
 ```bash
-# For auto-generated subtitles
-yt-dlp {COOKIES} --write-auto-sub --sub-lang {LANG_CODE} --skip-download --convert-subs srt -o "{PREFIX}%(id)s" "{URL}"
-
-# For manual/official subtitles
-yt-dlp {COOKIES} --write-subs --sub-lang {LANG_CODE} --skip-download --convert-subs srt -o "{PREFIX}%(id)s" "{URL}"
+# MODE is "manual" for official subs, "auto" for auto-generated captions.
+${CLAUDE_SKILL_DIR}/scripts/video-download-subs.sh "{URL}" "{LANG_CODE}" "{MODE}" "{PREFIX}"
 ```
 
-Then clean the SRT using the de-duplication script:
+Prints the absolute SRT path on stdout (e.g. `/tmp/yt-dQw4w9WgXcQ.en.srt`). Then de-duplicate:
+
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/srt_dedup.py {PREFIX}{VIDEO_ID}.{LANG_CODE}.srt
+python3 ${CLAUDE_SKILL_DIR}/scripts/srt_dedup.py "{SRT_PATH}"
 ```
 
 ### 4d: Fallback — Whisper transcription (if no usable subtitles)
 
 ```bash
-# Download audio
-yt-dlp {COOKIES} -f 'bestaudio[ext=m4a]/bestaudio' -o "{PREFIX}%(id)s.%(ext)s" "{URL}"
+# 1. Download audio — prints the audio file path on stdout.
+AUDIO=$(${CLAUDE_SKILL_DIR}/scripts/video-download-audio.sh "{URL}" "{PREFIX}")
 
-# Convert to WAV (16kHz mono)
-ffmpeg -i {PREFIX}{VIDEO_ID}.* -ar 16000 -ac 1 -c:a pcm_s16le {PREFIX}{VIDEO_ID}.wav -y
+# 2. Convert to WAV — prints the WAV path on stdout.
+WAV=$(${CLAUDE_SKILL_DIR}/scripts/audio-to-wav.sh "$AUDIO" "{PREFIX}{VIDEO_ID}.wav")
 
-# Transcribe with whisper-cpp
-whisper-cli -m ~/.whisper/ggml-large-v3.bin -l auto -f {PREFIX}{VIDEO_ID}.wav -otxt -of {PREFIX}{VIDEO_ID} --prompt "{PROMPT}"
+# 3. Transcribe — prints the .txt path on stdout.
+TXT=$(${CLAUDE_SKILL_DIR}/scripts/transcribe.sh "$WAV" "{PREFIX}{VIDEO_ID}" "{PROMPT}")
 ```
 
 **Build the prompt** from video metadata (title, channel, description):
 - Extract proper nouns, names, technical terms that Whisper might misspell
 - Keep prompt concise (key terms only, not full sentences)
 
-Then read `{PREFIX}{VIDEO_ID}.txt`.
+Then read the `$TXT` file.
 
 ## Step 5: Structure Content
 
