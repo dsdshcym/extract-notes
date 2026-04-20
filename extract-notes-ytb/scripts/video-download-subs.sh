@@ -24,7 +24,7 @@ URL="$1"
 LANG="$2"
 MODE="$3"
 PREFIX="$4"
-FIREFOX_PROFILE="firefox:~/Library/Application Support/Firefox/Profiles/hcmmkzdc.dev-edition-default"
+FIREFOX_PROFILE="${FIREFOX_PROFILE:-firefox:~/Library/Application Support/Firefox/Profiles/hcmmkzdc.dev-edition-default}"
 
 case "$MODE" in
   manual) SUB_FLAG="--write-subs" ;;

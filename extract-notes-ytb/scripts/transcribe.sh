@@ -25,7 +25,7 @@ WAV_FILE="$1"
 OUTPUT_PREFIX="$2"
 PROMPT="${3:-}"
 
-MODEL="$HOME/.whisper/ggml-large-v3.bin"
+MODEL="${WHISPER_MODEL:-$HOME/.whisper/ggml-large-v3.bin}"
 
 PROMPT_ARGS=()
 if [[ -n "$PROMPT" ]]; then

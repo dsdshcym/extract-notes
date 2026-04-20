@@ -20,7 +20,7 @@ fi
 
 URL="$1"
 PREFIX="$2"
-FIREFOX_PROFILE="firefox:~/Library/Application Support/Firefox/Profiles/hcmmkzdc.dev-edition-default"
+FIREFOX_PROFILE="${FIREFOX_PROFILE:-firefox:~/Library/Application Support/Firefox/Profiles/hcmmkzdc.dev-edition-default}"
 
 COOKIE_ARGS=()
 case "$URL" in

@@ -22,7 +22,7 @@ if [[ $# -ne 1 ]]; then
 fi
 
 URL="$1"
-FIREFOX_PROFILE="firefox:~/Library/Application Support/Firefox/Profiles/hcmmkzdc.dev-edition-default"
+FIREFOX_PROFILE="${FIREFOX_PROFILE:-firefox:~/Library/Application Support/Firefox/Profiles/hcmmkzdc.dev-edition-default}"
 
 case "$URL" in
   *youtube.com*|*youtu.be*|*bilibili.com*|*b23.tv*)

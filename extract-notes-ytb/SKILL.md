@@ -2,17 +2,8 @@
 name: extract-notes:ytb
 description: Extract notes from YouTube or Bilibili videos
 allowed-tools:
-  - Bash(${CLAUDE_SKILL_DIR}/scripts/video-metadata.sh:*)
-  - Bash(${CLAUDE_SKILL_DIR}/scripts/video-list-subs.sh:*)
-  - Bash(${CLAUDE_SKILL_DIR}/scripts/video-download-subs.sh:*)
-  - Bash(${CLAUDE_SKILL_DIR}/scripts/video-download-audio.sh:*)
-  - Bash(${CLAUDE_SKILL_DIR}/scripts/audio-to-wav.sh:*)
-  - Bash(${CLAUDE_SKILL_DIR}/scripts/transcribe.sh:*)
-  - Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/srt_dedup.py:*)
+  - Bash(${CLAUDE_SKILL_DIR}/scripts/extract-transcript.sh:*)
   - Bash(jq *)
-  - Bash(wc *)
-  - Bash(head *)
-  - Bash(tail *)
   - Read
   - Read(/tmp/*)
   - Skill(extract-notes)
@@ -22,6 +13,9 @@ allowed-tools:
 # Extract Notes from YouTube / Bilibili
 
 Extract transcript from YouTube or Bilibili videos and format as notes.
+Most steps are codified in `scripts/extract-transcript.sh`; you only do two
+things: (1) generate a whisper prompt when asked, (2) take notes from the
+final transcript.
 
 ## Input
 
@@ -32,7 +26,7 @@ $ARGUMENTS = [source-or-heading] [notes-taking-skill]
 - **source-or-heading**: URL or Org heading with embedded link
   - YouTube: `https://youtube.com/watch?v=xxx`, `https://youtu.be/xxx`
   - Bilibili: `https://bilibili.com/video/BVxxx`, `https://b23.tv/xxx`
-  - If omitted, detect from current browser tab
+  - If omitted, detect from current browser tab via `browser-control-cli current-tab`
 - **notes-taking-skill** (optional): passed through to extract-notes
 
 ## Step 1: Parse Arguments
@@ -40,98 +34,84 @@ $ARGUMENTS = [source-or-heading] [notes-taking-skill]
 ```
 If $ARGUMENTS contains [[url][...]] org link pattern:
   - Extract URL: regex \[\[([^\]]+)\](?:\[[^\]]*\])?\]
-  - Remaining text = title context
-Else if first arg starts with http://, https://:
-  - First arg = URL
-  - Second arg (if any) = notes-taking-skill
+Else if first arg starts with http:// or https://:
+  - First arg = URL; second arg (if any) = notes-taking-skill
 Else:
   - Detect from current browser tab via `browser-control-cli current-tab`
 ```
 
-## Step 2: Detect Platform
-
-| URL pattern | Platform | Temp prefix |
-|-------------|----------|-------------|
-| `youtube.com`, `youtu.be` | YouTube | `/tmp/yt-` |
-| `bilibili.com`, `b23.tv` | Bilibili | `/tmp/bili-` |
-
-Wrapper scripts auto-apply Firefox cookies for both platforms (Bilibili needs them to avoid HTTP 412).
-
-## Step 3: Fetch Video Metadata
+## Step 2: Extract Transcript
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/video-metadata.sh "{URL}"
+${CLAUDE_SKILL_DIR}/scripts/extract-transcript.sh "{URL}"
 ```
 
-Returns raw yt-dlp JSON on stdout. Pipe through `jq` to extract fields:
+The orchestrator detects the platform, fetches metadata, picks the best
+subtitle track (manual > auto-original > auto-translated), downloads and
+de-duplicates it. On success it prints one JSON object on stdout.
 
+### 2a: Success — transcript ready
+
+Exit 0. Stdout JSON:
+```json
+{
+  "video_id": "...",
+  "platform": "youtube" | "bilibili" | "other",
+  "title": "...",
+  "channel": "...",
+  "uploader": "...",
+  "duration_string": "12:34",
+  "chapters": [...] | null,
+  "description": "...",
+  "transcript_path": "/tmp/yt-xxx.en.srt.cleaned.txt",
+  "transcript_method": "manual_subs" | "auto_subs" | "auto_translated_subs",
+  "transcript_lang": "en"
+}
+```
+
+Read `transcript_path` and jump to Step 4.
+
+### 2b: No subtitles — generate a whisper prompt (LLM step)
+
+Exit 3. Stdout JSON same shape as above but with `needs_whisper_prompt: true`
+and `transcript_path/method/lang: null`.
+
+Build a whisper prompt from `.title`, `.channel`/`.uploader`, `.description`:
+- Extract proper nouns, names, technical terms Whisper might misspell
+- Concise — key terms only, not full sentences
+
+Then re-run with the prompt:
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/video-metadata.sh "{URL}" | jq '{title, channel, uploader, duration_string, chapters, description}'
+${CLAUDE_SKILL_DIR}/scripts/extract-transcript.sh "{URL}" --whisper-prompt "{PROMPT}"
 ```
 
-Useful fields: `.title`, `.channel` (YouTube) or `.uploader` (Bilibili), `.duration_string`, `.chapters` (array of `{start_time, end_time, title}` or null), `.description`.
+On success: exit 0, `transcript_method: "whisper"`, transcript at `transcript_path`.
 
-## Step 4: Get Transcript
+## Step 3: Structure Content
 
-### 4a: List available subtitles
-
-```bash
-${CLAUDE_SKILL_DIR}/scripts/video-list-subs.sh "{URL}"
-```
-
-The output shows two sections:
-- "Available subtitles" = manual/official (human-created)
-- "Available automatic captions" = auto-generated
-
-Within auto-generated:
-- `zh` or `en` (no suffix) = original auto-caption
-- `xx-zh` or `xx-en` (with suffix) = auto-TRANSLATED (lower quality)
-
-### 4b: Choose best subtitle
-
-Priority:
-1. Manual/official subtitles: `zh` or `en`
-2. Original auto-caption: plain `zh` or `en` (NO suffix)
-3. Auto-translated: `zh-Hans-zh`, `en-zh`, etc. (LAST resort)
-
-### 4c: Download subtitle
-
-```bash
-# MODE is "manual" for official subs, "auto" for auto-generated captions.
-${CLAUDE_SKILL_DIR}/scripts/video-download-subs.sh "{URL}" "{LANG_CODE}" "{MODE}" "{PREFIX}"
-```
-
-Prints the absolute SRT path on stdout (e.g. `/tmp/yt-dQw4w9WgXcQ.en.srt`). Then de-duplicate:
-
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/srt_dedup.py "{SRT_PATH}"
-```
-
-### 4d: Fallback — Whisper transcription (if no usable subtitles)
-
-```bash
-# 1. Download audio — prints the audio file path on stdout.
-AUDIO=$(${CLAUDE_SKILL_DIR}/scripts/video-download-audio.sh "{URL}" "{PREFIX}")
-
-# 2. Convert to WAV — prints the WAV path on stdout.
-WAV=$(${CLAUDE_SKILL_DIR}/scripts/audio-to-wav.sh "$AUDIO" "{PREFIX}{VIDEO_ID}.wav")
-
-# 3. Transcribe — prints the .txt path on stdout.
-TXT=$(${CLAUDE_SKILL_DIR}/scripts/transcribe.sh "$WAV" "{PREFIX}{VIDEO_ID}" "{PROMPT}")
-```
-
-**Build the prompt** from video metadata (title, channel, description):
-- Extract proper nouns, names, technical terms that Whisper might misspell
-- Keep prompt concise (key terms only, not full sentences)
-
-Then read the `$TXT` file.
-
-## Step 5: Structure Content
-
-- If video has **chapters**: Use chapter titles and timestamps as top-level sections
-- If no chapters: Infer structure from title/description or natural topic breaks; estimate timestamps from transcript
+- If metadata has `chapters`: use chapter titles and timestamps as top-level sections
+- If no chapters: infer structure from title/description or natural topic breaks;
+  transcripts from `srt_dedup.py` already include `[MM:SS]` markers every 30s
 - **Always include timestamps** at top-level sections in `[MM:SS]` format
 
-## Step 6: Clean and Format
+## Step 4: Clean and Format
 
 Invoke `Skill(extract-notes)` to clean the extracted content and format as notes.
+
+## Configuration
+
+Env vars (optional — defaults baked into the scripts):
+
+| Var | Default | Purpose |
+|---|---|---|
+| `FIREFOX_PROFILE` | `firefox:~/Library/Application Support/Firefox/Profiles/hcmmkzdc.dev-edition-default` | yt-dlp cookie source |
+| `WHISPER_MODEL` | `~/.whisper/ggml-large-v3.bin` | whisper.cpp model |
+| `TMP_DIR` | `/tmp` | temp file directory |
+
+## Force whisper (rare)
+
+To bypass subtitles even when available — e.g. to get timestamps without the
+30s bucketing from srt_dedup:
+```bash
+${CLAUDE_SKILL_DIR}/scripts/extract-transcript.sh "{URL}" --force-whisper --whisper-prompt "{PROMPT}"
+```
