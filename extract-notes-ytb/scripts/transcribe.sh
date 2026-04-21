@@ -38,6 +38,7 @@ whisper-cli \
   -f "$WAV_FILE" \
   -otxt \
   -of "$OUTPUT_PREFIX" \
+  --max-context 0 \
   "${PROMPT_ARGS[@]}" >&2
 
 echo "${OUTPUT_PREFIX}.txt"
