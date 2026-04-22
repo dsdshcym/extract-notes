@@ -160,7 +160,7 @@ stream_meeting() {
     local live_file="/tmp/zoom_transcript_${mid}_${date_tag}_live.txt"
     local curr_raw
     curr_raw=$(mktemp)
-    local prev_hash="" prev_line_count=0
+    local prev_hash="" prev_line_count=0 had_missing=0
 
     > "$live_file"
 
@@ -174,6 +174,19 @@ stream_meeting() {
         fi
 
         fetch_raw > "$curr_raw" 2>/dev/null || true
+
+        # Detect virtualized rows: Zoom's Transcript table returns `missing value`
+        # for text areas of rows outside the rendered viewport. Notify on rising
+        # edge so the user can scroll the Transcript window to re-materialize them.
+        if grep -q "missing value" "$curr_raw"; then
+            if [ "$had_missing" -eq 0 ]; then
+                echo "[$(date +%H:%M:%S)] ⚠ 'missing value' detected — scroll Transcript window to bottom" >&2
+                notify "Zoom Transcript ⚠" "Scroll Transcript window to bottom — rows are virtualized"
+                had_missing=1
+            fi
+        else
+            had_missing=0
+        fi
 
         local curr_hash
         curr_hash=$(md5 -q "$curr_raw" 2>/dev/null || md5sum "$curr_raw" | cut -d' ' -f1)
