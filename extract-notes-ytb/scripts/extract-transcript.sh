@@ -11,8 +11,12 @@
 #   1. Detect platform -> pick temp PREFIX.
 #   2. Fetch yt-dlp JSON metadata (one shot; includes `.subtitles` and
 #      `.automatic_captions` so no separate --list-subs call is needed).
-#   3. Pick the best subtitle track algorithmically:
-#        manual en|zh  >  auto en|zh (no suffix)  >  auto translated (*-zh / *-en)
+#   3. Pick the best subtitle track algorithmically, in order:
+#        a. manual subs (original lang > zh > en)
+#        b. auto captions in original lang — prefers `{lang}-orig` over `{lang}`
+#           (YouTube exposes `-orig` as the explicitly-original track when both exist).
+#           Region tags are normalized (`en-US` → `en`) since caption keys use base lang.
+#        c. auto-translated captions (zh variants > en)
 #   4. If a track is chosen and --force-whisper is not set:
 #        download + dedup -> transcript path
 #      Else:
@@ -137,32 +141,59 @@ emit_result() {
 pick_subtitle() {
   # Echo "MODE LANG" on stdout, or nothing if no usable track.
   # Priority:
-  #   1. manual "en" | "zh"
-  #   2. auto   "en" | "zh"           (no suffix)
-  #   3. auto   "*-zh" | "*-en"       (translated)
+  #   1. manual subs: original lang > zh variants > en
+  #   2. auto captions in original lang — prefer `{lang}-orig` over `{lang}`
+  #      (YouTube marks the explicitly-original track as `-orig` when both exist;
+  #      the plain `{lang}` is often a re-auto-generation of a translation.)
+  #   3. auto translated captions — zh variants > en
+
+  # Detect original language. yt-dlp's 'language' can be a region tag (e.g. en-US);
+  # caption keys use the base tag (en), so normalize.
+  local orig_lang orig_base
+  orig_lang="$(jq -r '.language // empty' <<<"$META_JSON" 2>/dev/null)"
+  orig_base="${orig_lang%%-*}"
+
+  # Build ordered language list.
+  # For Chinese-origin videos, use the fixed zh order (Simplified before Traditional)
+  # instead of putting orig_lang first. For other languages, put the normalized
+  # base lang first so e.g. Japanese videos prefer ja.
+  local -a lang_order=()
+  if [[ -n "$orig_base" && "$orig_base" != zh* ]]; then
+    lang_order+=("$orig_base")
+  fi
+  for l in zh zh-Hans zh-CN zh-Hant zh-TW en; do
+    [[ "$l" != "$orig_base" ]] && lang_order+=("$l")
+  done
+
   local lang
 
-  # 1. Manual subs (preferred languages first)
-  for lang in en zh; do
+  # 1. Manual subs
+  for lang in "${lang_order[@]}"; do
     if jq -e --arg l "$lang" '.subtitles[$l] // empty' <<<"$META_JSON" >/dev/null 2>&1; then
       echo "manual $lang"; return
     fi
   done
 
-  # 2. Auto captions, original language (no suffix like "-zh" or "-en")
-  for lang in en zh; do
+  # 2. Auto captions in original language — prefer the explicit `-orig` variant
+  # over the plain key when both exist.
+  for lang in "${lang_order[@]}"; do
+    if jq -e --arg l "${lang}-orig" '.automatic_captions[$l] // empty' <<<"$META_JSON" >/dev/null 2>&1; then
+      echo "auto ${lang}-orig"; return
+    fi
     if jq -e --arg l "$lang" '.automatic_captions[$l] // empty' <<<"$META_JSON" >/dev/null 2>&1; then
       echo "auto $lang"; return
     fi
   done
 
-  # 3. Auto captions, translated to en or zh
-  local translated
-  translated="$(jq -r '
+  # 3. Auto captions, translated — prefer *-zh over *-en (legacy yt-dlp form
+  # where translated tracks are exposed with suffixes like `en-zh`).
+  local all_translated translated
+  all_translated="$(jq -r '
     .automatic_captions
     | keys[]?
     | select(endswith("-zh") or endswith("-en"))
-  ' <<<"$META_JSON" 2>/dev/null | head -1)"
+  ' <<<"$META_JSON" 2>/dev/null)"
+  translated="$(grep -m1 -- '-zh$' <<<"$all_translated" || grep -m1 -- '-en$' <<<"$all_translated" || true)"
 
   if [[ -n "$translated" ]]; then
     echo "auto_translated $translated"
