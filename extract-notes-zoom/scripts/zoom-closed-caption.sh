@@ -177,66 +177,126 @@ import sys, os, time
 
 raw_path, state_path, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
 
+# State is an append-only chronological history. Identity is by content
+# (speaker + text-prefix), not by AX table position — Zoom virtualizes the
+# table and rotates row indices once the meeting exceeds ~100 turns, so
+# index-based identity scrambles order and overwrites earlier turns.
+#
+# State file format (TSV):
+#   seq <TAB> started_at <TAB> finalized <TAB> speaker <TAB> text
+# - finalized: "1" once a newer row has appeared after it (text frozen);
+#   "0" for the still-growing tail row.
+
 with open(raw_path, newline='') as f:
     raw = f.read()
 
 # Each row is terminated by \r; fields within a row split on \t.
-rows = [r for r in raw.split('\r') if r]
-current = []
-for r in rows:
+visible = []
+for r in (r for r in raw.split('\r') if r):
     parts = r.split('\t', 1)
     sp = parts[0].strip() if parts else ''
     tx = parts[1].strip() if len(parts) > 1 else ''
-    current.append((sp, tx))
+    if sp == 'missing value': sp = ''
+    if tx == 'missing value': tx = ''
+    if not sp and not tx:
+        continue  # virtualized / off-viewport
+    visible.append({'speaker': sp, 'text': tx})
 
-# Load prior state: index<TAB>first_seen<TAB>speaker<TAB>text
-state = {}
+# Load existing history.
+history = []
 if os.path.exists(state_path):
     with open(state_path) as f:
         for line in f:
             line = line.rstrip('\n')
             if not line: continue
-            parts = line.split('\t', 3)
-            if len(parts) < 4: continue
-            idx, ts, sp, tx = parts
-            state[int(idx)] = {'ts': ts, 'speaker': sp, 'text': tx}
+            parts = line.split('\t', 4)
+            if len(parts) < 5: continue
+            seq, ts, fin, sp, tx = parts
+            history.append({
+                'seq': int(seq), 'ts': ts, 'finalized': fin == '1',
+                'speaker': sp, 'text': tx,
+            })
 
 now = time.strftime('%H:%M:%S')
 
-# Update state: keep the longest non-empty text we've seen per row index.
-# If a row reappears with a different speaker, we treat it as the same slot
-# and overwrite (Zoom rotating its row buffer would surface here).
-for i, (sp, tx) in enumerate(current, start=1):
-    if not sp and not tx:
-        continue  # virtualized / missing
-    if sp == 'missing value': sp = ''
-    if tx == 'missing value': tx = ''
-    prev = state.get(i)
-    if prev is None:
-        state[i] = {'ts': now, 'speaker': sp, 'text': tx}
+def matches_live(stored, vis):
+    # Stored speaker may be empty if image hadn't rendered when first seen —
+    # in that case match purely on text-prefix and backfill the name later.
+    if stored['speaker'] and vis['speaker'] and stored['speaker'] != vis['speaker']:
+        return False
+    if not stored['text']:
+        return True
+    # Use a 30-char prefix as the fingerprint: stable enough that mid-row ASR
+    # corrections don't break identity, distinctive enough to disambiguate.
+    n = min(30, len(stored['text']))
+    return vis['text'].startswith(stored['text'][:n])
+
+if not visible:
+    pass  # nothing to do
+elif not history:
+    # First poll with content: take everything; finalize all but the tail.
+    for i, v in enumerate(visible):
+        history.append({
+            'seq': i + 1, 'ts': now, 'finalized': i < len(visible) - 1,
+            'speaker': v['speaker'], 'text': v['text'],
+        })
+else:
+    live = history[-1]
+    # Locate our live row in visible. Search from the bottom — the live row
+    # is always the latest at the time it was last seen, so ties prefer the
+    # most recent visible match.
+    live_pos = -1
+    for j in range(len(visible) - 1, -1, -1):
+        if matches_live(live, visible[j]):
+            live_pos = j
+            break
+
+    if live_pos < 0:
+        # Lost continuity — live row scrolled out, or polling was too slow
+        # and Zoom rotated its buffer past it. Append everything visible as
+        # new history with a warning marker. Better duplication than loss.
+        sys.stderr.write(
+            f"[{now}] ⚠ live row not found in visible "
+            f"(last seq {live['seq']}); appending {len(visible)} rows\n"
+        )
+        live['finalized'] = True
+        next_seq = live['seq'] + 1
+        for i, v in enumerate(visible):
+            history.append({
+                'seq': next_seq + i, 'ts': now,
+                'finalized': i < len(visible) - 1,
+                'speaker': v['speaker'], 'text': v['text'],
+            })
     else:
-        # Speaker name from the row might initially be empty if the image
-        # hadn't rendered; backfill if we now have one.
-        if sp and not prev['speaker']:
-            prev['speaker'] = sp
-        # Keep the longer/newer text. CC text monotonically grows per row.
-        if len(tx) >= len(prev['text']):
-            prev['text'] = tx
+        # Update live row from current snapshot.
+        if not live['speaker'] and visible[live_pos]['speaker']:
+            live['speaker'] = visible[live_pos]['speaker']
+        live['text'] = visible[live_pos]['text']
 
-# Persist state, ordered by row index.
+        # Append rows after live_pos as new history entries.
+        next_seq = live['seq'] + 1
+        new_rows = visible[live_pos + 1:]
+        if new_rows:
+            live['finalized'] = True
+            for i, v in enumerate(new_rows):
+                history.append({
+                    'seq': next_seq + i, 'ts': now,
+                    'finalized': i < len(new_rows) - 1,
+                    'speaker': v['speaker'], 'text': v['text'],
+                })
+
+# Persist state.
 with open(state_path, 'w') as f:
-    for i in sorted(state):
-        r = state[i]
-        f.write(f"{i}\t{r['ts']}\t{r['speaker']}\t{r['text']}\n")
+    for r in history:
+        fin = '1' if r['finalized'] else '0'
+        f.write(f"{r['seq']}\t{r['ts']}\t{fin}\t{r['speaker']}\t{r['text']}\n")
 
-# Render human-readable output.
-blocks = []
-for i in sorted(state):
-    r = state[i]
-    speaker = r['speaker'] or 'Unknown'
-    blocks.append(f"{speaker} [{r['ts']}]:\n{r['text']}")
-
+# Render output in chronological order.
 with open(out_path, 'w') as f:
+    blocks = [
+        f"{r['speaker'] or 'Unknown'} [{r['ts']}]:\n{r['text']}"
+        for r in history
+    ]
     f.write("\n\n".join(blocks))
     if blocks:
         f.write("\n")
