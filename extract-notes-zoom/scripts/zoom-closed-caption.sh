@@ -44,40 +44,81 @@ IDLE_INTERVAL=5
 
 # --- Shared functions ---
 
+# Every AppleScript call MUST go through osa() so a wedged Accessibility server
+# can't hang the stream forever. A single unguarded `entire contents` query on a
+# Zoom window has been observed to wedge System Events *globally* (even Finder
+# queries hang) until it's force-restarted — so: always time out, and never use
+# `entire contents` anywhere in this script.
+OSA_TIMEOUT="${OSA_TIMEOUT:-8}"
+_TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
+
+# Run an AppleScript (from stdin, or via -e) under a hard timeout.
+# Prints the script's stdout; returns 124 if it timed out.
+osa() {
+    if [ -n "$_TIMEOUT_BIN" ]; then
+        "$_TIMEOUT_BIN" "$OSA_TIMEOUT" osascript "$@" 2>/dev/null
+    else
+        osascript "$@" 2>/dev/null
+    fi
+}
+
 notify() {
     local title="$1" message="$2"
-    osascript -e "display notification \"$message\" with title \"$title\"" 2>/dev/null || true
+    osa -e "display notification \"$message\" with title \"$title\"" || true
 }
 
-meeting_window_exists() {
-    osascript -e '
-    tell application "System Events"
-        if not (exists process "zoom.us") then return "no"
-        tell process "zoom.us"
-            if exists window "Zoom Meeting" then return "yes"
-        end tell
+# Is a meeting still in progress? Returns: yes | no | timeout
+#
+# Detect via the "Meeting" menu-bar item, NOT the "Zoom Meeting" window: while
+# the user is screen sharing, Zoom destroys the "Zoom Meeting" window (replacing
+# it with share toolbars + a floating overlay), but the "Meeting" menu persists
+# the whole time. Keying meeting-presence off the window made the stream think
+# the meeting had ended the moment sharing started.
+meeting_active() {
+    local out rc=0
+    out=$(osa <<'ASCRIPT'
+tell application "System Events"
+    if not (exists process "zoom.us") then return "no"
+    tell process "zoom.us"
+        if exists window "Zoom Meeting" then return "yes"
+        try
+            if exists menu bar item "Meeting" of menu bar 1 then return "yes"
+        end try
     end tell
-    return "no"
-    ' 2>/dev/null
+end tell
+return "no"
+ASCRIPT
+) || rc=$?
+    if [ "$rc" -eq 124 ]; then echo "timeout"; return 0; fi
+    [ "$out" = "yes" ] && echo "yes" || echo "no"
 }
 
-cc_visible() {
-    # "Hide captions" button is present only when CC is currently shown.
-    # Zoom buttons have no name; match on AX description instead.
-    osascript -e '
-    tell application "System Events"
-        tell process "zoom.us"
-            tell window "Zoom Meeting"
-                if (count of (every button whose description is "Hide captions")) > 0 then return "yes"
-            end tell
+# Is the in-meeting CC table available to capture? Returns: yes | no | timeout
+#
+# Requires the "Zoom Meeting" window AND its "Hide captions" button (present only
+# when captions are showing). Returns "no" during screen share (window gone) or
+# when the user has hidden captions — in both cases we pause capture but keep the
+# accumulated transcript. Zoom buttons have no AX name, so match on description.
+cc_capture_ready() {
+    local out rc=0
+    out=$(osa <<'ASCRIPT'
+tell application "System Events"
+    tell process "zoom.us"
+        if not (exists window "Zoom Meeting") then return "no"
+        tell window "Zoom Meeting"
+            if (count of (every button whose description is "Hide captions")) > 0 then return "yes"
         end tell
     end tell
-    return "no"
-    ' 2>/dev/null
+end tell
+return "no"
+ASCRIPT
+) || rc=$?
+    if [ "$rc" -eq 124 ]; then echo "timeout"; return 0; fi
+    [ "$out" = "yes" ] && echo "yes" || echo "no"
 }
 
 get_meeting_id() {
-    osascript -e '
+    osa -e '
     set oldClip to the clipboard
     tell application "System Events"
         tell process "zoom.us"
@@ -88,11 +129,11 @@ get_meeting_id() {
     set inviteLink to the clipboard as text
     set the clipboard to oldClip
     return inviteLink
-    ' 2>/dev/null | grep -oE '[0-9]{9,}' || echo "unknown"
+    ' | grep -oE '[0-9]{9,}' || echo "unknown"
 }
 
 fetch_raw() {
-    osascript << 'ASCRIPT'
+    osa << 'ASCRIPT'
 set LF to ASCII character 10
 
 tell application "System Events"
@@ -134,6 +175,11 @@ stream_meeting() {
     local curr_raw
     curr_raw=$(mktemp)
     local prev_hash="" had_missing=0
+    local ended_strikes=0 share_notified=0 timeout_notified=0
+    # Require several consecutive "not in a meeting" reads before declaring the
+    # meeting over, so a transient AX hiccup (or a brief window flip during a
+    # share transition) can't end the stream prematurely.
+    local ended_threshold=3
 
     : > "$live_file"
     : > "$state_file"
@@ -142,18 +188,53 @@ stream_meeting() {
     notify "Zoom Closed Caption" "Streaming meeting $mid → $live_file"
 
     while true; do
-        if [ "$(meeting_window_exists)" != "yes" ]; then
-            echo "[$(date +%H:%M:%S)] Zoom Meeting window closed. Meeting ended." >&2
-            break
-        fi
+        local active
+        active=$(meeting_active)
 
-        if [ "$(cc_visible)" != "yes" ]; then
-            echo "[$(date +%H:%M:%S)] Captions hidden — turn them back on (or meeting ended)." >&2
+        if [ "$active" = "timeout" ]; then
+            # Accessibility server busy/wedged — transient. Never treat as
+            # "ended": keep the accumulated transcript and retry.
+            if [ "$timeout_notified" -eq 0 ]; then
+                echo "[$(date +%H:%M:%S)] ⚠ AX query timed out — retrying (transcript preserved)" >&2
+                timeout_notified=1
+            fi
             sleep "$INTERVAL"
             continue
         fi
+        timeout_notified=0
 
-        if ! fetch_raw > "$curr_raw" 2>/dev/null; then
+        if [ "$active" != "yes" ]; then
+            ended_strikes=$((ended_strikes + 1))
+            if [ "$ended_strikes" -ge "$ended_threshold" ]; then
+                echo "[$(date +%H:%M:%S)] Meeting ended (no Zoom Meeting window or Meeting menu)." >&2
+                break
+            fi
+            sleep "$INTERVAL"
+            continue
+        fi
+        ended_strikes=0
+
+        if [ "$(cc_capture_ready)" != "yes" ]; then
+            # Screen share active (Zoom Meeting window destroyed) or captions
+            # hidden. The CC overlay shown during a share is GPU-rendered and not
+            # in the accessibility tree, so there's nothing to capture. Pause —
+            # but keep the accumulated transcript; Zoom resets its own caption
+            # table across a share, so our state file is the only record of
+            # pre-share captions. Capture auto-resumes when the window returns.
+            if [ "$share_notified" -eq 0 ]; then
+                echo "[$(date +%H:%M:%S)] CC table unavailable (screen share or captions hidden) — pausing capture, transcript preserved" >&2
+                notify "Zoom CC" "Captions paused (screen share?) — transcript preserved"
+                share_notified=1
+            fi
+            sleep "$INTERVAL"
+            continue
+        fi
+        if [ "$share_notified" -eq 1 ]; then
+            echo "[$(date +%H:%M:%S)] CC table available again — resuming capture" >&2
+            share_notified=0
+        fi
+
+        if ! fetch_raw > "$curr_raw"; then
             sleep "$INTERVAL"
             continue
         fi
@@ -355,7 +436,7 @@ if [ "$DAEMON" = true ]; then
     echo "[$(date +%H:%M:%S)] Daemon mode: waiting for Zoom Meeting window with captions..." >&2
 
     while true; do
-        if [ "$(meeting_window_exists)" = "yes" ] && [ "$(cc_visible)" = "yes" ]; then
+        if [ "$(meeting_active)" = "yes" ] && [ "$(cc_capture_ready)" = "yes" ]; then
             mid="${MEETING_ID:-$(get_meeting_id)}"
             stream_meeting "$mid"
             echo "[$(date +%H:%M:%S)] Waiting for next meeting..." >&2
@@ -363,12 +444,12 @@ if [ "$DAEMON" = true ]; then
         sleep "$IDLE_INTERVAL"
     done
 else
-    if [ "$(meeting_window_exists)" != "yes" ]; then
-        echo "No Zoom Meeting window found. Start a meeting first." >&2
+    if [ "$(meeting_active)" != "yes" ]; then
+        echo "No Zoom meeting in progress. Start a meeting first." >&2
         exit 1
     fi
 
-    if [ "$(cc_visible)" != "yes" ]; then
+    if [ "$(cc_capture_ready)" != "yes" ]; then
         echo "Closed captions are not visible. Click 'Show captions' in the meeting toolbar." >&2
         exit 1
     fi
