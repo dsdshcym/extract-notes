@@ -4,6 +4,9 @@ description: Extract notes from Zoom transcript window
 allowed-tools:
   - Bash(bash *zoom-stream.sh*)
   - Bash(bash *zoom-chat.sh*)
+  - Bash(bash *zoom-audio-record.sh*)
+  - Bash(*zoom-audio-capture*)
+  - Bash(python3 *zoom-audio-merge.py*)
   - Bash(wc:*)
   - Read
   - Skill(driving-browser)
@@ -101,6 +104,49 @@ Invoke `Skill(extract-notes)` to clean the extracted content and format as notes
 - Cmd+A / Cmd+C does not work in Zoom's native Transcript window
 - Window must be named "Transcript" (may differ in non-English Zoom)
 - Meeting ID is obtained by clicking "Copy invite link" from the Meeting menu (restores clipboard after)
+
+## Audio Capture Path (screenshare-proof alternative)
+
+The Transcript/CC scraping above reads Zoom's in-window caption table via
+Accessibility. **That table disappears while you screenshare** (Zoom collapses
+the meeting window), so captions are lost for the whole share. The audio path
+avoids this by recording audio independently of Zoom's UI tree.
+
+```bash
+bash ${CLAUDE_SKILL_DIR}/scripts/zoom-audio-record.sh [--daemon] [--notes-dir=DIR] [MEETING_ID]
+```
+
+Pipeline:
+1. **Auto-opens the Participants panel** (`zoom-open-participants.sh`, idempotent)
+   so the poller can read it — and keeps reading it through screensharing.
+2. `bin/zoom-audio-capture` records two 16 kHz mono WAVs: Zoom app audio
+   (everyone else, via ScreenCaptureKit) and the mic (you, via AVAudioEngine),
+   and stamps the capture-start epoch.
+3. `zoom-participants-poll.sh` logs roster + binary mute-state (`epoch name muted`)
+   at ~3 Hz to a timeline TSV.
+4. On meeting end: `whisper-cli -ocsv` transcribes each WAV; `zoom-audio-merge.py`
+   aligns segments to the timeline and labels each:
+   - your track → `Me:`
+   - one participant unmuted → that name
+   - several unmuted → `[Alice|Bob]:` candidate set (you/the agent disambiguate)
+   - none → `Others:`
+5. The transcript (`/tmp/zoom_audio_*_transcript.txt`) feeds `from FILE` above.
+
+### Setup (one-time)
+
+- Compile the helper: `swiftc -O scripts/zoom-audio-capture.swift -o scripts/bin/zoom-audio-capture`
+  (binary is gitignored).
+- Whisper model: `~/.whisper/ggml-large-v3.bin` (override with `$WHISPER_MODEL`).
+- Permissions: **Screen Recording** (for the capture binary) + **Accessibility**.
+- For unattended use, install `com.user.zoom-audio-record.plist` (template in
+  `scripts/`) into `~/Library/LaunchAgents/`.
+
+### Diarization limits (v1)
+
+Speaker attribution is mute-state-based: in mute-disciplined meetings it's
+accurate; with several people unmuted it falls back to the candidate set. A
+future add-on (pixel brightness of the mic glyph) would resolve those to a
+single speaker. See `docs/plans/2026-06-01-zoom-audio-notes-design.md`.
 
 ## Chat Files
 

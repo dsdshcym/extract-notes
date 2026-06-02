@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd template for the Zoom audio-notes daemon.
+
+  Setup:
+    1. Compile the capture helper:
+         swiftc -O zoom-audio-capture.swift -o bin/zoom-audio-capture
+    2. Copy this file to ~/Library/LaunchAgents/, replacing the two
+       REPLACE_WITH_* placeholders with absolute paths.
+    3. launchctl load ~/Library/LaunchAgents/com.user.zoom-audio-record.plist
+
+  The daemon needs Screen Recording + Accessibility permission. Grant them to
+  the process launchd runs it under (it will prompt on first capture).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.user.zoom-audio-record</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>REPLACE_WITH_ABS_PATH/zoom-audio-record.sh</string>
+    <string>--daemon</string>
+    <string>--notes-dir=REPLACE_WITH_NOTES_DIR</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/tmp/zoom-audio-record.out.log</string>
+  <key>StandardErrorPath</key><string>/tmp/zoom-audio-record.err.log</string>
+</dict>
+</plist>
