@@ -125,11 +125,18 @@ mute-state, not speaking-state.
 **Per poll (~3–4 Hz), per participant row:** read name + mic `description`
 (re-query each poll — rows virtualize/scroll). Log `timestamp, name, muted?`.
 
-**Merge into transcript (v1):** for each whisper "Others" segment, if exactly
-one participant was unmuted during it → attribute to that name. Otherwise label
-"Others". Plus the roster context above so Claude can reason about who's present.
-Crude but pure-AX, needs no Screen Recording, and is accurate in
-mute-disciplined meetings.
+**Merge into transcript (v1):** for each whisper "Others" segment, compute the
+set of participants who were unmuted during it.
+- Exactly one unmuted → attribute to that name.
+- Several unmuted → label with the **full candidate set**, e.g.
+  `[Alice|Bob|Carol]: …`, not a bare "Others." Hand the agent the candidates so
+  it can disambiguate from conversational context instead of throwing the
+  information away.
+- None unmuted (rare; ASR caught a tail) → fall back to "Others".
+
+Plus the roster context above so Claude knows the full attendee list. Crude but
+pure-AX, needs no Screen Recording, and is accurate in mute-disciplined
+meetings; in looser ones the candidate set still narrows attribution sharply.
 
 ### Visual active-speaker detection (LATER ADD-ON — not in v1)
 
@@ -167,8 +174,9 @@ process.
 ## Known limitations (accepted)
 
 - **v1 attribution is coarse:** with several people unmuted at once, mute-state
-  can't tell who's talking → those spans fall back to "Others." The visual
-  add-on is what fixes this.
+  can't tell who's talking → those spans carry the candidate set (e.g.
+  `[Alice|Bob]`) for the agent to disambiguate, rather than a single name. The
+  visual add-on is what resolves it to one speaker.
 - **Large meetings:** the participants list virtualizes; participants scrolled
   off-screen can't be polled. Fine for typical meeting sizes; degrades past
   roughly one screen of participants.
