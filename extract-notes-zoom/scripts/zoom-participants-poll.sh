@@ -29,28 +29,28 @@ tell application "System Events"
     tell (window 1 whose name begins with "Participants")
       if not (exists outline 1 of scroll area 1) then return ""
       tell outline 1 of scroll area 1
-        set out to ""
+        set outText to ""
         repeat with r in rows
           repeat with c in (UI elements of r)
-            set nm to ""
-            set st to "UNKNOWN"
+            set personName to ""
+            set audioState to "UNKNOWN"
             repeat with sub in (UI elements of c)
-              if (class of sub as text) is "static text" then set nm to (value of sub as text)
+              if (class of sub as text) is "static text" then set personName to (value of sub as text)
             end repeat
             repeat with sub in (UI elements of c)
               if (class of sub as text) is "image" then
-                set d to (description of sub)
-                if d contains "audio muted" then
-                  set st to "MUTED"
-                else if d contains "audio unmuted" then
-                  set st to "UNMUTED"
+                set micDesc to (description of sub)
+                if micDesc contains "audio muted" then
+                  set audioState to "MUTED"
+                else if micDesc contains "audio unmuted" then
+                  set audioState to "UNMUTED"
                 end if
               end if
             end repeat
-            if nm is not "" then set out to out & nm & (ASCII character 9) & st & (ASCII character 13)
+            if personName is not "" then set outText to outText & personName & (ASCII character 9) & audioState & (ASCII character 13)
           end repeat
         end repeat
-        return out
+        return outText
       end tell
     end tell
   end tell
