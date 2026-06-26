@@ -118,3 +118,26 @@ To bypass subtitles even when available — e.g. to get timestamps without the
 ```bash
 ${CLAUDE_SKILL_DIR}/scripts/extract-transcript.sh "{URL}" --force-whisper --whisper-prompt "{PROMPT}"
 ```
+
+## Troubleshooting: YouTube "HTTP Error 403: Forbidden" on audio download
+
+Only the whisper path downloads audio; when it 403s, it's YouTube's **PO Token**
+(proof-of-origin) enforcement on the media URL — not a transient error and not
+fixed by a single `--extractor-args player_client=` pin (the blessed client
+rotates over time).
+
+`scripts/video-download-audio.sh` already handles this by **looping over player
+clients** (`web_embedded`, `tv`, `web_safari`, `default`, `mweb`) and accepting
+the first that yields a file — yt-dlp does NOT auto-retry another client after a
+download-time 403, so the loop is what self-heals.
+
+If the loop ever exhausts all clients:
+
+1. (Re)install the bgutil PO Token provider — it mints a PO token to assist every
+   attempt (passive; helps but isn't reliable alone):
+   ```bash
+   ${CLAUDE_SKILL_DIR}/scripts/setup-pot-provider.sh
+   ```
+   Requires `deno` (`brew install deno`). Installs to `~/.config/yt-dlp/plugins/`
+   (survives `brew upgrade yt-dlp`) + a server checkout at `~/bgutil-ytdlp-pot-provider`.
+2. Update yt-dlp: `brew upgrade yt-dlp` (releases track YouTube changes closely).
