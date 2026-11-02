@@ -47,6 +47,17 @@ try_download() {
   [[ -n "$(downloaded_file)" ]]
 }
 
+# Same, but with no cookies at all. `--ignore-config` is required because the
+# user's ~/.config/yt-dlp/config also pins --cookies-from-browser, which would
+# otherwise sneak the cookies back in.
+try_download_nocookies() {
+  yt-dlp --ignore-config --no-playlist "$@" \
+    -f 'bestaudio[ext=m4a]/bestaudio' \
+    -o "${PREFIX}%(id)s.%(ext)s" \
+    "$URL" >&2 || true
+  [[ -n "$(downloaded_file)" ]]
+}
+
 # ---- non-YouTube: single straightforward attempt --------------------------
 case "$URL" in
   *youtube.com*|*youtu.be*) ;;
@@ -71,16 +82,38 @@ esac
 #      sometimes mints a token and the download STILL 403s (bgutil's own README
 #      warns of this). So it's a passive assist, not the primary mechanism.
 #
-# Durable strategy: loop over candidate clients, accept the first that yields a
-# file. If the bgutil plugin is installed (see setup-pot-provider.sh) it assists
-# every attempt automatically — but the loop is what actually self-heals when
-# YouTube rotates which client works.
+#   3. Sending cookies can make things WORSE, not better: a signed-in session
+#      binds the media URL to a PO token tied to that account, and when that
+#      token doesn't satisfy YouTube the audio format 403s — while the very
+#      same request without cookies succeeds.
 #
-# Order: known-good first (web_embedded), then others, then `default` (the case
-# where bgutil's PO token is most likely to be the deciding factor).
+# Durable strategy: try cookieless first (public videos, the overwhelming
+# majority, need no session), then loop over candidate clients, accepting the
+# first attempt that yields a file. The cookie attempts stay as the fallback for
+# age-restricted / members-only / private videos, which genuinely need a
+# session. If the bgutil plugin is installed (see setup-pot-provider.sh) it
+# assists every attempt automatically — but the loops are what actually self-heal
+# when YouTube rotates which client works.
+#
+# Client order: known-good first (web_embedded), then others, then `default` (the
+# case where bgutil's PO token is most likely to be the deciding factor).
+
+log "attempt: no cookies, default client"
+if try_download_nocookies; then
+  downloaded_file
+  exit 0
+fi
 
 for CLIENT in web_embedded tv web_safari default mweb; do
-  log "attempt: player_client=$CLIENT"
+  log "attempt: no cookies, player_client=$CLIENT"
+  if try_download_nocookies --extractor-args "youtube:player_client=$CLIENT"; then
+    downloaded_file
+    exit 0
+  fi
+done
+
+for CLIENT in web_embedded tv web_safari default mweb; do
+  log "attempt: cookies, player_client=$CLIENT"
   if try_download --extractor-args "youtube:player_client=$CLIENT"; then
     downloaded_file
     exit 0
