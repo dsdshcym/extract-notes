@@ -31,7 +31,7 @@ case "$URL" in
     ;;
 esac
 
-VIDEO_ID="$(yt-dlp "${COOKIE_ARGS[@]}" --get-id "$URL" 2>/dev/null | head -1)"
+VIDEO_ID="$(yt-dlp --no-playlist "${COOKIE_ARGS[@]}" --get-id "$URL" 2>/dev/null | head -1)"
 
 # Returns the downloaded audio file path on stdout (empty if nothing landed).
 downloaded_file() {
@@ -40,7 +40,7 @@ downloaded_file() {
 
 try_download() {
   # $@ = extra yt-dlp args (e.g. --extractor-args ...)
-  yt-dlp "${COOKIE_ARGS[@]}" "$@" \
+  yt-dlp --no-playlist "${COOKIE_ARGS[@]}" "$@" \
     -f 'bestaudio[ext=m4a]/bestaudio' \
     -o "${PREFIX}%(id)s.%(ext)s" \
     "$URL" >&2 || true

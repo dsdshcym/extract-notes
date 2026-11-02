@@ -40,9 +40,9 @@ case "$URL" in
 esac
 
 # Capture video ID so we can print the final SRT path.
-VIDEO_ID="$(yt-dlp "${COOKIE_ARGS[@]}" --get-id "$URL" 2>/dev/null | head -1)"
+VIDEO_ID="$(yt-dlp --no-playlist "${COOKIE_ARGS[@]}" --get-id "$URL" 2>/dev/null | head -1)"
 
-yt-dlp "${COOKIE_ARGS[@]}" \
+yt-dlp --no-playlist "${COOKIE_ARGS[@]}" \
   "$SUB_FLAG" \
   --sub-lang "$LANG" \
   --skip-download \

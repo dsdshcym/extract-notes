@@ -26,9 +26,9 @@ FIREFOX_PROFILE="${FIREFOX_PROFILE:-firefox:~/Library/Application Support/Firefo
 
 case "$URL" in
   *youtube.com*|*youtu.be*|*bilibili.com*|*b23.tv*)
-    exec yt-dlp --cookies-from-browser "$FIREFOX_PROFILE" -j "$URL" 2>/dev/null
+    exec yt-dlp --no-playlist --cookies-from-browser "$FIREFOX_PROFILE" -j "$URL" 2>/dev/null
     ;;
   *)
-    exec yt-dlp -j "$URL" 2>/dev/null
+    exec yt-dlp --no-playlist -j "$URL" 2>/dev/null
     ;;
 esac

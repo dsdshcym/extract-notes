@@ -3,7 +3,7 @@
 #
 # Usage: video-list-subs.sh URL
 #
-# Output: yt-dlp --list-subs output (first 30 lines) on stdout. Two sections:
+# Output: yt-dlp --no-playlist --list-subs output (first 30 lines) on stdout. Two sections:
 #   "Available subtitles"         = manual/official (human-created, highest quality)
 #   "Available automatic captions" = auto-generated
 #
@@ -25,9 +25,9 @@ FIREFOX_PROFILE="${FIREFOX_PROFILE:-firefox:~/Library/Application Support/Firefo
 
 case "$URL" in
   *youtube.com*|*youtu.be*|*bilibili.com*|*b23.tv*)
-    yt-dlp --cookies-from-browser "$FIREFOX_PROFILE" --list-subs "$URL" 2>&1 | head -30
+    yt-dlp --no-playlist --cookies-from-browser "$FIREFOX_PROFILE" --list-subs "$URL" 2>&1 | head -30
     ;;
   *)
-    yt-dlp --list-subs "$URL" 2>&1 | head -30
+    yt-dlp --no-playlist --list-subs "$URL" 2>&1 | head -30
     ;;
 esac
