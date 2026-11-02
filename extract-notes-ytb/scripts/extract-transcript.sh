@@ -257,12 +257,37 @@ if [[ -z "$WHISPER_PROMPT" ]]; then
 fi
 
 log "no subtitles; transcribing with whisper..."
-AUDIO_PATH="$("$SCRIPT_DIR/video-download-audio.sh" "$URL" "$PREFIX")"
-log "audio: $AUDIO_PATH"
 
+# Expected duration (seconds) from metadata, used to detect truncated audio.
+EXPECTED_DUR="$(jq -r '.duration // empty' <<<"$META_JSON" 2>/dev/null)"
 WAV_PATH="${PREFIX}${VIDEO_ID}.wav"
-"$SCRIPT_DIR/audio-to-wav.sh" "$AUDIO_PATH" "$WAV_PATH" >/dev/null
-log "wav: $WAV_PATH"
+
+# Bilibili's CDN occasionally serves a same-length-but-corrupt audio stream
+# (AAC decode dies partway, yielding a truncated wav while ffmpeg/yt-dlp still
+# exit 0). That produces silently-incomplete transcripts. Guard against it:
+# re-download until the decoded wav covers ~the full video duration.
+AUDIO_PATH=""
+for attempt in 1 2 3 4; do
+  rm -f "${PREFIX}${VIDEO_ID}".* 2>/dev/null || true
+  AUDIO_PATH="$("$SCRIPT_DIR/video-download-audio.sh" "$URL" "$PREFIX")"
+  log "audio (attempt $attempt): $AUDIO_PATH"
+  "$SCRIPT_DIR/audio-to-wav.sh" "$AUDIO_PATH" "$WAV_PATH" >/dev/null 2>&1
+  WAV_DUR="$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$WAV_PATH" 2>/dev/null || echo 0)"
+  if [[ -z "$EXPECTED_DUR" || "$EXPECTED_DUR" == "null" ]]; then
+    log "wav: $WAV_PATH (no expected duration to validate against)"
+    break
+  fi
+  # Accept if wav covers at least 98% of the expected duration.
+  if awk "BEGIN{exit !($WAV_DUR >= 0.98 * $EXPECTED_DUR)}"; then
+    log "wav: $WAV_PATH (${WAV_DUR}s of ${EXPECTED_DUR}s — ok)"
+    break
+  fi
+  log "TRUNCATED audio: wav ${WAV_DUR}s < expected ${EXPECTED_DUR}s; retrying download"
+  if [[ "$attempt" -eq 4 ]]; then
+    echo "audio download kept truncating (${WAV_DUR}s of ${EXPECTED_DUR}s) after 4 attempts" >&2
+    exit 1
+  fi
+done
 
 TXT_PATH="$("$SCRIPT_DIR/transcribe.sh" "$WAV_PATH" "${PREFIX}${VIDEO_ID}" "$WHISPER_PROMPT")"
 log "whisper transcript: $TXT_PATH"
