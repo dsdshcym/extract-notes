@@ -16,6 +16,8 @@
 #        b. auto captions in original lang — prefers `{lang}-orig` over `{lang}`
 #           (YouTube exposes `-orig` as the explicitly-original track when both exist).
 #           Region tags are normalized (`en-US` → `en`) since caption keys use base lang.
+#           If the `-orig` (real ASR) track's language differs from the video's
+#           language, all auto tracks are back-translations -> skip to whisper.
 #        c. auto-translated captions (zh variants > en)
 #   4. If a track is chosen and --force-whisper is not set:
 #        download + dedup -> transcript path
@@ -176,6 +178,21 @@ pick_subtitle() {
 
   # 2. Auto captions in original language — prefer the explicit `-orig` variant
   # over the plain key when both exist.
+  #
+  # When YouTube exposes a `-orig` track, that is the ONLY real ASR track; every
+  # other auto key is a machine translation of it. If the ASR language doesn't
+  # match the video's language (e.g. a Chinese video with `language: zh-Hant`
+  # but only `en-orig`), the "zh-Hans" auto track is Chinese -> English ASR ->
+  # Chinese back-translation and loses the speaker's wording. Skip subtitles
+  # entirely so the caller falls through to whisper.
+  local asr_lang
+  asr_lang="$(jq -r '.automatic_captions | keys[]? | select(endswith("-orig"))' <<<"$META_JSON" 2>/dev/null | head -1)"
+  asr_lang="${asr_lang%-orig}"
+  if [[ -n "$asr_lang" && -n "$orig_base" && "${asr_lang%%-*}" != "$orig_base" ]]; then
+    echo "[extract-transcript] ASR track is ${asr_lang}-orig but video language is $orig_lang; skipping translated auto subs" >&2
+    return
+  fi
+
   for lang in "${lang_order[@]}"; do
     if jq -e --arg l "${lang}-orig" '.automatic_captions[$l] // empty' <<<"$META_JSON" >/dev/null 2>&1; then
       echo "auto ${lang}-orig"; return

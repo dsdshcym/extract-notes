@@ -53,6 +53,17 @@ The orchestrator detects the platform, fetches metadata, picks the best
 subtitle track (manual > auto-original > auto-translated), downloads and
 de-duplicates it. On success it prints one JSON object on stdout.
 
+**Goal: capture the speaker's original wording.** A subtitle track that is a
+machine translation of the speech is NOT a transcript. For example, a Chinese
+video (`language: zh-Hant`) whose only real ASR track is `en-orig`: its
+`zh-Hans` auto track is Chinese speech → English ASR → Chinese
+back-translation. Notes from it read like a translation ("担任领导职务",
+"该片将首先在美国上映") instead of the speaker ("老马也说了搞不定，我们再继续努力").
+The orchestrator detects this mismatch (ASR `-orig` language ≠ video language),
+skips subtitles, and exits 3 so you run whisper (2b). If
+`transcript_method` is `auto_translated_subs`, or the transcript reads like a
+translation of the video's language, re-run with `--force-whisper`.
+
 ### 2a: Success — transcript ready
 
 Exit 0. Stdout JSON:
