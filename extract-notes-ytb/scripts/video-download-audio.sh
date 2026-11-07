@@ -38,10 +38,12 @@ downloaded_file() {
   ls -1 "${PREFIX}${VIDEO_ID}".* 2>/dev/null | grep -v '\.wav$' | head -1
 }
 
+AUDIO_FORMAT='bestaudio[ext=m4a]/bestaudio'
+
 try_download() {
   # $@ = extra yt-dlp args (e.g. --extractor-args ...)
   yt-dlp --no-playlist "${COOKIE_ARGS[@]}" "$@" \
-    -f 'bestaudio[ext=m4a]/bestaudio' \
+    -f "$AUDIO_FORMAT" \
     -o "${PREFIX}%(id)s.%(ext)s" \
     "$URL" >&2 || true
   [[ -n "$(downloaded_file)" ]]
@@ -52,7 +54,7 @@ try_download() {
 # otherwise sneak the cookies back in.
 try_download_nocookies() {
   yt-dlp --ignore-config --no-playlist "$@" \
-    -f 'bestaudio[ext=m4a]/bestaudio' \
+    -f "$AUDIO_FORMAT" \
     -o "${PREFIX}%(id)s.%(ext)s" \
     "$URL" >&2 || true
   [[ -n "$(downloaded_file)" ]]
@@ -62,9 +64,34 @@ try_download_nocookies() {
 case "$URL" in
   *youtube.com*|*youtu.be*) ;;
   *)
-    try_download || true
-    downloaded_file
-    exit 0
+    # Bilibili's CDN sometimes answers HTTP 567 for one specific audio
+    # stream (seen: highest-quality 30280, with AND without cookies) while
+    # lower-quality tracks (30232 / 30216) on the same video download fine.
+    # So fall back through (quality x cookies), failing fast (--retries 2)
+    # instead of burning yt-dlp's default 10 retries per attempt:
+    #   1. cookies,    highest quality   (original behavior)
+    #   2. no cookies, highest quality
+    #   3. cookies,    lower quality
+    #   4. no cookies, lower quality
+    HIGH_FMT='bestaudio[ext=m4a]/bestaudio'
+    LOW_FMT='30232/30216/bestaudio[abr<150]'
+
+    AUDIO_FORMAT="$HIGH_FMT"
+    log "attempt: cookies, highest quality"
+    if try_download --retries 2; then downloaded_file; exit 0; fi
+
+    log "attempt: no cookies, highest quality"
+    if try_download_nocookies --retries 2; then downloaded_file; exit 0; fi
+
+    AUDIO_FORMAT="$LOW_FMT"
+    log "attempt: cookies, lower quality"
+    if try_download --retries 2; then downloaded_file; exit 0; fi
+
+    log "attempt: no cookies, lower quality"
+    if try_download_nocookies --retries 2; then downloaded_file; exit 0; fi
+
+    log "all download strategies failed"
+    exit 1
     ;;
 esac
 
