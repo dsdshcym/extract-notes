@@ -12,7 +12,8 @@
 # Output: continuously updates /tmp/zoom_cc_{MEETING_ID}_{DATE}_live.txt
 #
 # Accessibility path:
-#   window "Zoom Meeting" → scroll area 1 → table 1 (desc="Closed caption subtitles")
+#   window "Zoom Meeting" or "Zoom Webinar" → scroll area 1 → table 1
+#   (desc="Closed caption subtitles")
 #   each row → cell 1 → image 1 (desc=speaker) + static text 1 (value=running text)
 #
 # Heads-up: Zoom may move the CC overlay above the viewport in a near-term release.
@@ -62,6 +63,12 @@ osa() {
     fi
 }
 
+# Titles Zoom gives the main in-call window. A regular meeting is "Zoom Meeting";
+# a webinar is "Zoom Webinar". Both hold the same toolbar and CC table, so the
+# script treats them identically. Add a title here if Zoom introduces another.
+# (AppleScript list literal, interpolated into the scripts below.)
+CC_WINDOW_TITLES='{"Zoom Meeting", "Zoom Webinar"}'
+
 notify() {
     local title="$1" message="$2"
     osa -e "display notification \"$message\" with title \"$title\"" || true
@@ -76,11 +83,13 @@ notify() {
 # the meeting had ended the moment sharing started.
 meeting_active() {
     local out rc=0
-    out=$(osa <<'ASCRIPT'
+    out=$(osa <<ASCRIPT
 tell application "System Events"
     if not (exists process "zoom.us") then return "no"
     tell process "zoom.us"
-        if exists window "Zoom Meeting" then return "yes"
+        repeat with n in ${CC_WINDOW_TITLES}
+            if exists window (n as text) then return "yes"
+        end repeat
         try
             if exists menu bar item "Meeting" of menu bar 1 then return "yes"
         end try
@@ -101,13 +110,16 @@ ASCRIPT
 # accumulated transcript. Zoom buttons have no AX name, so match on description.
 cc_capture_ready() {
     local out rc=0
-    out=$(osa <<'ASCRIPT'
+    out=$(osa <<ASCRIPT
 tell application "System Events"
     tell process "zoom.us"
-        if not (exists window "Zoom Meeting") then return "no"
-        tell window "Zoom Meeting"
-            if (count of (every button whose description is "Hide captions")) > 0 then return "yes"
-        end tell
+        repeat with n in ${CC_WINDOW_TITLES}
+            if exists window (n as text) then
+                tell window (n as text)
+                    if (count of (every button whose description is "Hide captions")) > 0 then return "yes"
+                end tell
+            end if
+        end repeat
     end tell
 end tell
 return "no"
@@ -133,12 +145,20 @@ get_meeting_id() {
 }
 
 fetch_raw() {
-    osa << 'ASCRIPT'
+    osa << ASCRIPT
 set LF to ASCII character 10
 
+set winName to ""
 tell application "System Events"
     tell process "zoom.us"
-        tell window "Zoom Meeting"
+        repeat with n in ${CC_WINDOW_TITLES}
+            if exists window (n as text) then
+                set winName to n as text
+                exit repeat
+            end if
+        end repeat
+        if winName is "" then error "no Zoom call window"
+        tell window winName
             tell table 1 of scroll area 1
                 set speakers to description of every image of every UI element of every row
                 set texts to value of every static text of every UI element of every row
