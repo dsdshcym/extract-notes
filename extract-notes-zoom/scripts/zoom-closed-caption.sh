@@ -13,7 +13,8 @@
 #
 # Accessibility path:
 #   window "Zoom Meeting" or "Zoom Webinar" → scroll area 1 → table 1
-#   (desc="Closed caption subtitles")
+#   (desc="Closed caption subtitles"). Meeting rows: avatar image (desc=speaker)
+#   + 1 static text. Webinar rows: no avatar, 2 static texts (speaker, caption).
 #   each row → cell 1 → image 1 (desc=speaker) + static text 1 (value=running text)
 #
 # Heads-up: Zoom may move the CC overlay above the viewport in a near-term release.
@@ -171,13 +172,30 @@ end tell
 set output to ""
 repeat with i from 1 to rowCount
     set sp to item i of speakers
-    set tx to item i of texts
     set spStr to ""
-    set txStr to ""
     if sp is not missing value then set spStr to sp as text
-    if tx is not missing value then set txStr to tx as text
-    -- Use a delimiter unlikely to appear in CC text. \t separates speaker/text;
-    -- \r terminates each row so embedded newlines in CC don't break parsing.
+
+    -- A row is a list of cells, each a list of static texts. Meeting rows have
+    -- one text (the caption; speaker is the avatar image's description). Webinar
+    -- rows have no avatar and two texts: speaker name, then caption. Keep the
+    -- texts separate (unit separator, ASCII 31) so the parser can tell them apart
+    -- instead of getting them glued together.
+    set txParts to {}
+    repeat with cellTexts in (item i of texts)
+        repeat with t in cellTexts
+            if t is missing value then
+                set end of txParts to "missing value"
+            else
+                set end of txParts to (t as text)
+            end if
+        end repeat
+    end repeat
+    set AppleScript's text item delimiters to (ASCII character 31)
+    set txStr to txParts as text
+    set AppleScript's text item delimiters to ""
+
+    -- ASCII 9 (tab) separates speaker from texts; ASCII 13 (CR) terminates each
+    -- row so newlines inside CC text don't break parsing.
     set output to output & spStr & (ASCII character 9) & txStr & (ASCII character 13)
 end repeat
 return output
@@ -296,9 +314,14 @@ visible = []
 for r in (r for r in raw.split('\r') if r):
     parts = r.split('\t', 1)
     sp = parts[0].strip() if parts else ''
-    tx = parts[1].strip() if len(parts) > 1 else ''
+    texts = [t.strip() for t in (parts[1] if len(parts) > 1 else '').split('\x1f')]
+    texts = [t for t in texts if t and t != 'missing value']
     if sp == 'missing value': sp = ''
-    if tx == 'missing value': tx = ''
+    # Webinar rows carry no avatar, so the speaker is the first static text and
+    # the caption is whatever follows it. Meeting rows have one text (caption).
+    if not sp and len(texts) >= 2:
+        sp, texts = texts[0], texts[1:]
+    tx = ' '.join(texts)
     if not sp and not tx:
         continue  # virtualized / off-viewport
     visible.append({'speaker': sp, 'text': tx})
